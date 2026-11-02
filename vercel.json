@@ -1,0 +1,17 @@
+{
+  "version": 2,
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "/api"
+    },
+    {
+      "source": "/supabase/(.*)",
+      "destination": "/api"
+    },
+    {
+      "source": "/((?!api|supabase|assets).*)",
+      "destination": "/index.html"
+    }
+  ]
+}

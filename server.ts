@@ -13,7 +13,10 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
-const DATA_DIR = path.join(__dirname, 'data');
+
+// Detect Serverless environment (Vercel / Lambda)
+const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
+const DATA_DIR = isServerless ? path.join('/tmp', 'gvcn_data') : path.join(__dirname, 'data');
 const DB_FILE = path.join(DATA_DIR, 'db.json');
 
 // Supabase configuration for project thuy-trang
@@ -31,11 +34,31 @@ const supabaseServer: SupabaseClient | null = isSupabaseConfigured
   ? createClient(supabaseUrl, supabaseKey)
   : null;
 
+// Middleware for parsing JSON requests
 app.use(express.json({ limit: '10mb' }));
 
+// Vercel Serverless Routing normalizer:
+// Ensure Express router always sees /api/... even if Vercel rewrites stripped the prefix or passed relative paths
+app.use((req: any, _res: any, next: any) => {
+  const original = req.originalUrl || '';
+  if (original && (original.startsWith('/api') || original.startsWith('/supabase'))) {
+    req.url = original;
+  } else if (!req.url.startsWith('/api') && !req.url.startsWith('/supabase')) {
+    const knownPrefixes = ['/auth', '/students', '/settings', '/attendance', '/grades', '/conduct', '/seating', '/honors', '/announcements', '/evaluations'];
+    if (knownPrefixes.some(p => req.url.startsWith(p))) {
+      req.url = `/api${req.url.startsWith('/') ? '' : '/'}${req.url}`;
+    }
+  }
+  next();
+});
+
 // Ensure data directory exists
-if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
+try {
+  if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+  }
+} catch (e) {
+  console.warn('Could not initialize DATA_DIR:', e);
 }
 
 // Password hashing helper (PBKDF2)
@@ -77,16 +100,46 @@ function formatDobToPasswordSuffix(dob: string): string {
   return cleaned.replace(/\D/g, '');
 }
 
-// In-memory token store for session verification
+// Token store for session verification (supports both in-memory and HMAC signed stateless tokens for Vercel Serverless)
+const SESSION_SECRET = process.env.SESSION_SECRET || process.env.VITE_SUPABASE_PUBLISHABLE_KEY || 'gvcn-secret-salt-2026';
 const sessions = new Map<string, { userId: string; role: 'teacher' | 'student'; username: string; name: string; studentId?: string; expiresAt: number }>();
 
 function generateToken(payload: { userId: string; role: 'teacher' | 'student'; username: string; name: string; studentId?: string }): string {
-  const token = crypto.randomBytes(32).toString('hex');
-  sessions.set(token, {
+  const data = {
     ...payload,
     expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000 // 7 days
-  });
+  };
+  const jsonStr = JSON.stringify(data);
+  const base64Data = Buffer.from(jsonStr).toString('base64url');
+  const signature = crypto.createHmac('sha256', SESSION_SECRET).update(base64Data).digest('base64url');
+  const token = `${base64Data}.${signature}`;
+  sessions.set(token, data);
   return token;
+}
+
+function verifyToken(token: string): { userId: string; role: 'teacher' | 'student'; username: string; name: string; studentId?: string; expiresAt: number } | null {
+  if (!token) return null;
+  // 1. Verify signed token structure (Stateless across Vercel serverless function instances)
+  if (token.includes('.')) {
+    const [base64Data, signature] = token.split('.');
+    if (base64Data && signature) {
+      const expectedSig = crypto.createHmac('sha256', SESSION_SECRET).update(base64Data).digest('base64url');
+      if (expectedSig === signature) {
+        try {
+          const data = JSON.parse(Buffer.from(base64Data, 'base64url').toString('utf-8'));
+          if (data && data.expiresAt && data.expiresAt > Date.now()) {
+            return data;
+          }
+        } catch {}
+      }
+    }
+  }
+  // 2. Fallback to in-memory session map
+  const mem = sessions.get(token);
+  if (mem && mem.expiresAt > Date.now()) {
+    return mem;
+  }
+  return null;
 }
 
 // Initial Mock Seed Data
@@ -319,11 +372,27 @@ function getInitialData() {
   };
 }
 
-// Load DB
+// Load DB with safe fallback for Vercel Serverless environment
 function loadDb(): any {
   if (!fs.existsSync(DB_FILE)) {
-    const initial = getInitialData();
-    fs.writeFileSync(DB_FILE, JSON.stringify(initial, null, 2), 'utf-8');
+    let initial: any = null;
+    const localDbPath = path.join(__dirname, 'data', 'db.json');
+    if (fs.existsSync(localDbPath)) {
+      try {
+        initial = JSON.parse(fs.readFileSync(localDbPath, 'utf-8'));
+      } catch {}
+    }
+    if (!initial) {
+      initial = getInitialData();
+    }
+    try {
+      if (!fs.existsSync(DATA_DIR)) {
+        fs.mkdirSync(DATA_DIR, { recursive: true });
+      }
+      fs.writeFileSync(DB_FILE, JSON.stringify(initial, null, 2), 'utf-8');
+    } catch (err) {
+      console.warn('Notice: Could not write DB_FILE to filesystem:', err);
+    }
     return initial;
   }
   try {
@@ -335,21 +404,28 @@ function loadDb(): any {
   }
 }
 
-// Atomic Save DB
+// Atomic Save DB (handles serverless writable /tmp and catches disk errors)
 function saveDb(data: any): void {
-  const tmpFile = `${DB_FILE}.tmp.${Date.now()}`;
-  fs.writeFileSync(tmpFile, JSON.stringify(data, null, 2), 'utf-8');
-  fs.renameSync(tmpFile, DB_FILE);
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+    const tmpFile = path.join(DATA_DIR, `db.tmp.${Date.now()}`);
+    fs.writeFileSync(tmpFile, JSON.stringify(data, null, 2), 'utf-8');
+    fs.renameSync(tmpFile, DB_FILE);
+  } catch (err) {
+    console.warn('Warning: Could not save DB to disk in current runtime:', err);
+  }
 }
 
-// Authentication Middleware
+// Authentication Middleware (supports stateless signed tokens across Vercel function instances)
 function authMiddleware(req: any, res: any, next: any) {
   const authHeader = req.headers.authorization;
   if (!authHeader) {
     return res.status(401).json({ error: 'Chưa đăng nhập hoặc thiếu token xác thực' });
   }
   const token = authHeader.replace(/^Bearer\s+/i, '').trim();
-  const session = sessions.get(token);
+  const session = verifyToken(token);
   if (!session || session.expiresAt < Date.now()) {
     return res.status(401).json({ error: 'Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại' });
   }
@@ -1726,4 +1802,11 @@ async function startServer() {
   });
 }
 
-startServer();
+// Start standalone HTTP listener only when NOT running as a serverless function (e.g. Vercel)
+if (!process.env.VERCEL && !process.env.AWS_LAMBDA_FUNCTION_NAME) {
+  startServer();
+}
+
+export { app };
+export default app;
+
