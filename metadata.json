@@ -1,0 +1,8 @@
+{
+  "name": "GVCN – Lê Thị Thắm",
+  "description": "Hệ thống quản lý giáo dục và quản trị lớp chủ nhiệm toàn diện dành cho giáo viên và học sinh",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

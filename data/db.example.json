@@ -1,0 +1,135 @@
+{
+  "teacher": {
+    "id": "teacher-main",
+    "username": "gvcn",
+    "name": "Giáo viên chủ nhiệm mẫu",
+    "role": "teacher",
+    "passwordHash": "placeholder_sha512_hash_value",
+    "passwordSalt": "placeholder_salt_value"
+  },
+  "students": [
+    {
+      "id": "HS01",
+      "code": "HS01",
+      "name": "Học sinh mẫu 01",
+      "gender": "Nam",
+      "dob": "01/01/2009",
+      "phone": "0900000001",
+      "address": "Số 1 Đường Mẫu, Phường Bến Nghé, Quận 1",
+      "passwordHash": "placeholder_sha512_hash_value",
+      "passwordSalt": "placeholder_salt_value",
+      "customPasswordSet": false,
+      "createdAt": "2026-09-01T00:00:00.000Z"
+    },
+    {
+      "id": "HS02",
+      "code": "HS02",
+      "name": "Học sinh mẫu 02",
+      "gender": "Nữ",
+      "dob": "02/02/2009",
+      "phone": "0900000002",
+      "address": "Số 2 Đường Mẫu, Phường Bến Nghé, Quận 1",
+      "passwordHash": "placeholder_sha512_hash_value",
+      "passwordSalt": "placeholder_salt_value",
+      "customPasswordSet": false,
+      "createdAt": "2026-09-01T00:00:00.000Z"
+    }
+  ],
+  "seating": {
+    "seats": [
+      {
+        "seatCode": "D1-B1-T",
+        "row": 1,
+        "desk": 1,
+        "position": "L",
+        "studentId": "HS01"
+      },
+      {
+        "seatCode": "D1-B1-P",
+        "row": 1,
+        "desk": 1,
+        "position": "R",
+        "studentId": "HS02"
+      }
+    ],
+    "updatedAt": "2026-09-01T00:00:00.000Z"
+  },
+  "announcements": [
+    {
+      "id": "ann-01",
+      "title": "Chào mừng năm học mới",
+      "content": "Kế hoạch tuần lễ sinh hoạt đầu năm của lớp chủ nhiệm.",
+      "category": "urgent",
+      "createdAt": "2026-09-01T00:00:00.000Z",
+      "author": "Giáo viên chủ nhiệm"
+    }
+  ],
+  "honors": [
+    {
+      "id": "hon-01",
+      "studentId": "HS01",
+      "title": "Học sinh tiêu biểu tuần",
+      "reason": "Tích cực phát biểu xây dựng bài học",
+      "date": "2026-09-05",
+      "term": "hk1"
+    }
+  ],
+  "conductRules": [
+    {
+      "id": "r-01",
+      "code": "KT01",
+      "category": "academic",
+      "description": "Điểm 10 kiểm tra miệng / 15 phút",
+      "type": "praise",
+      "points": 5,
+      "isActive": true
+    },
+    {
+      "id": "r-02",
+      "code": "VP01",
+      "category": "discipline",
+      "description": "Đi học muộn không phép",
+      "type": "criticism",
+      "points": -3,
+      "isActive": true
+    }
+  ],
+  "conductLogs": [],
+  "attendance": [],
+  "grades": [],
+  "periodEvaluations": [],
+  "settings": {
+    "appName": "GVCN – Quản lý Lớp Chủ Nhiệm",
+    "schoolName": "THPT Chuyên Lê Hồng Phong",
+    "className": "10A1",
+    "schoolYear": "2026 - 2027",
+    "teacherName": "Giáo viên chủ nhiệm",
+    "attendanceShift": "morning",
+    "subjects": [
+      {
+        "id": "SUB-TOAN",
+        "code": "TOAN",
+        "name": "Toán học",
+        "type": "score",
+        "isActive": true,
+        "order": 1
+      },
+      {
+        "id": "SUB-VAN",
+        "code": "VAN",
+        "name": "Ngữ văn",
+        "type": "score",
+        "isActive": true,
+        "order": 2
+      },
+      {
+        "id": "SUB-ANH",
+        "code": "ANH",
+        "name": "Tiếng Anh",
+        "type": "score",
+        "isActive": true,
+        "order": 3
+      }
+    ]
+  }
+}
