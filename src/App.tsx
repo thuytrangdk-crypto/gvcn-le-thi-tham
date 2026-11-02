@@ -40,10 +40,10 @@ import { Menu, LogIn, Sparkles } from 'lucide-react';
 export default function App() {
   const [user, setUser] = useState<UserSession | null>(null);
   const [settings, setSettings] = useState<AppSettings>({
-    appName: 'GVCN – Quản trị lớp chủ nhiệm',
+    appName: 'GVCN – Lê Thị Thắm',
     schoolName: 'THPT Chuyên Lê Hồng Phong',
-    className: '10A1',
-    teacherName: 'Cô Nguyễn Thị Mai',
+    className: '7A1',
+    teacherName: 'Cô Lê Thị Thắm',
     schoolYear: '2025 - 2026',
     baseConductScore: 100,
     accentColor: '#E06D85',
@@ -82,12 +82,10 @@ export default function App() {
         if (meRes.settings) {
           setSettings(prev => ({ ...prev, ...meRes.settings }));
         }
-      } else if (import.meta.env.DEV) {
-        // Chỉ tự động đăng nhập demo trong môi trường phát triển (DEV) để thuận tiện kiểm thử
-        const autoLogin = await authApi.login('gvcn', 'Gvcn@2026').catch(() => null);
-        if (autoLogin) {
-          setUser(autoLogin.user);
-        }
+      } else {
+        setUser(null);
+        // Prompt login if no active authenticated session
+        setShowLoginModal(true);
       }
 
       // 2. Load core records in parallel
@@ -119,7 +117,7 @@ export default function App() {
       setConductLogs(conductRes);
       setGrades(gradesRes);
       if (settingsRes) {
-        setSettings(settingsRes);
+        setSettings(prev => ({ ...prev, ...settingsRes }));
       }
     } catch (err) {
       console.error('Lỗi khi tải dữ liệu:', err);
@@ -136,6 +134,7 @@ export default function App() {
   const handleLogin = async (username: string, pass: string) => {
     const res = await authApi.login(username, pass);
     setUser(res.user);
+    setShowLoginModal(false);
     await loadAllData();
     // If student, open their profile or dashboard
     if (res.user.role === 'student' && res.user.studentId) {

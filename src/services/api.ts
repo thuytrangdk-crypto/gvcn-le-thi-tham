@@ -12,7 +12,9 @@ import type {
   PeriodEvaluation
 } from '../types';
 
-let cachedToken: string | null = typeof window !== 'undefined' ? sessionStorage.getItem('gvcn_auth_token') : null;
+let cachedToken: string | null = typeof window !== 'undefined'
+  ? (sessionStorage.getItem('gvcn_auth_token') || localStorage.getItem('gvcn_auth_token'))
+  : null;
 
 export function getToken(): string | null {
   return cachedToken;
@@ -20,10 +22,14 @@ export function getToken(): string | null {
 
 export function setToken(token: string | null) {
   cachedToken = token;
-  if (token) {
-    sessionStorage.setItem('gvcn_auth_token', token);
-  } else {
-    sessionStorage.removeItem('gvcn_auth_token');
+  if (typeof window !== 'undefined') {
+    if (token) {
+      sessionStorage.setItem('gvcn_auth_token', token);
+      localStorage.setItem('gvcn_auth_token', token);
+    } else {
+      sessionStorage.removeItem('gvcn_auth_token');
+      localStorage.removeItem('gvcn_auth_token');
+    }
   }
 }
 
@@ -251,6 +257,7 @@ export const conductApi = {
 // Settings
 export const settingsApi = {
   get: () => request<AppSettings>('/api/settings'),
+  getPublic: () => request<AppSettings>('/api/settings/public'),
   update: (data: Partial<AppSettings>) => request<AppSettings>('/api/settings', {
     method: 'PUT',
     body: JSON.stringify(data)

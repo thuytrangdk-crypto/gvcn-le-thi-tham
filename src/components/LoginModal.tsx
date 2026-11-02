@@ -9,7 +9,8 @@ import {
   AlertCircle,
   X,
   ShieldCheck,
-  KeyRound
+  KeyRound,
+  ArrowRight
 } from 'lucide-react';
 import type { AppSettings } from '../types';
 
@@ -26,151 +27,240 @@ export const LoginModal: React.FC<LoginModalProps> = ({
   onLogin,
   settings
 }) => {
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
+  const [activeTab, setActiveTab] = useState<'teacher' | 'student'>('teacher');
+  const [teacherPassword, setTeacherPassword] = useState('');
+  const [showTeacherPassword, setShowTeacherPassword] = useState(false);
+
+  const [studentCode, setStudentCode] = useState('');
+  const [studentPassword, setStudentPassword] = useState('');
+  const [showStudentPassword, setShowStudentPassword] = useState(false);
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleTeacherSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!username.trim() || !password) {
-      setError('Vui lòng nhập tên đăng nhập và mật khẩu');
+    if (!teacherPassword.trim()) {
+      setError('Vui lòng nhập mật khẩu giáo viên');
       return;
     }
 
     setLoading(true);
     setError(null);
     try {
-      await onLogin(username.trim(), password);
+      await onLogin('gvcn', teacherPassword);
+      setTeacherPassword('');
       onClose();
     } catch (err: any) {
-      setError(err.message || 'Đăng nhập không thành công');
+      setError(err.message || 'Mật khẩu giáo viên không chính xác');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleQuickLogin = (user: string, pass: string) => {
-    setUsername(user);
-    setPassword(pass);
+  const handleStudentSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!studentCode.trim() || !studentPassword) {
+      setError('Vui lòng nhập mã học sinh và mật khẩu');
+      return;
+    }
+
+    setLoading(true);
     setError(null);
+    try {
+      await onLogin(studentCode.trim().toUpperCase(), studentPassword);
+      setStudentCode('');
+      setStudentPassword('');
+      onClose();
+    } catch (err: any) {
+      setError(err.message || 'Mã học sinh hoặc mật khẩu không chính xác');
+    } finally {
+      setLoading(false);
+    }
   };
 
+  const currentClassName = settings.className || '7A1';
+  const currentSchoolYear = settings.schoolYear || '2025–2026';
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs">
-      <div className="bg-white rounded-3xl max-w-md w-full p-6 sm:p-8 shadow-2xl border border-rose-100 space-y-6 relative">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs">
+      <div className="bg-white rounded-3xl max-w-md w-full p-6 sm:p-8 shadow-2xl border border-rose-100 space-y-6 relative overflow-hidden">
+        {/* Subtle decorative glow */}
+        <div className="absolute -top-20 left-1/2 -translate-x-1/2 w-64 h-28 bg-gradient-to-b from-[#FAD2DC] to-transparent rounded-full blur-2xl pointer-events-none opacity-50" />
+
         <button
           onClick={onClose}
-          className="absolute top-5 right-5 p-1.5 rounded-xl text-slate-400 hover:bg-slate-100 transition-colors"
+          type="button"
+          aria-label="Đóng cửa sổ đăng nhập"
+          className="absolute top-5 right-5 p-2 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-rose-50 transition-colors"
         >
           <X className="w-5 h-5" />
         </button>
 
         {/* Brand header */}
-        <div className="text-center space-y-2">
-          <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-[#E06D85] to-[#F7A8B8] text-white flex items-center justify-center mx-auto shadow-md shadow-rose-200">
-            <GraduationCap className="w-8 h-8" />
+        <div className="text-center space-y-2.5 relative">
+          <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-[#E06D85] to-[#F7A8B8] text-white flex items-center justify-center mx-auto shadow-md shadow-rose-200/80 ring-4 ring-rose-50">
+            <GraduationCap className="w-9 h-9" />
           </div>
-          <h3 className="text-xl font-extrabold text-slate-900 tracking-tight">
-            Đăng nhập hệ thống
-          </h3>
-          <p className="text-xs text-slate-500">
-            {settings.appName || 'GVCN – Quản trị lớp chủ nhiệm'} · Lớp {settings.className}
-          </p>
+          <div>
+            <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">
+              GVCN – Quản trị lớp chủ nhiệm
+            </h2>
+            <p className="text-xs sm:text-sm text-slate-500 font-medium mt-0.5">
+              Đồng hành cùng giáo viên – Kết nối lớp học
+            </p>
+          </div>
+
+          {/* Dynamic Class & School Year Badge */}
+          <div className="pt-1">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-50 border border-rose-200/70 text-[#C94C67] text-xs font-semibold shadow-xs">
+              <Sparkles className="w-3.5 h-3.5 text-[#E06D85]" />
+              <span>Lớp {currentClassName} – Năm học {currentSchoolYear}</span>
+            </span>
+          </div>
+        </div>
+
+        {/* Two Distinct Tabs: Giáo viên & Học sinh */}
+        <div className="p-1 bg-slate-100/80 rounded-2xl flex gap-1 border border-slate-200/60">
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab('teacher');
+              setError(null);
+            }}
+            className={`flex-1 py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 ${
+              activeTab === 'teacher'
+                ? 'bg-white text-[#C94C67] shadow-sm border border-rose-100'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <ShieldCheck className={`w-4 h-4 ${activeTab === 'teacher' ? 'text-[#E06D85]' : 'text-slate-400'}`} />
+            <span>Giáo viên</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab('student');
+              setError(null);
+            }}
+            className={`flex-1 py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 ${
+              activeTab === 'student'
+                ? 'bg-white text-[#C94C67] shadow-sm border border-rose-100'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <User className={`w-4 h-4 ${activeTab === 'student' ? 'text-[#E06D85]' : 'text-slate-400'}`} />
+            <span>Học sinh</span>
+          </button>
         </div>
 
         {error && (
-          <div className="p-3.5 rounded-2xl bg-red-50 border border-red-200 text-xs text-red-700 flex items-center gap-2">
+          <div className="p-3.5 rounded-2xl bg-red-50 border border-red-200 text-xs sm:text-sm text-red-700 flex items-center gap-2.5 animate-fadeIn">
             <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
-            <span>{error}</span>
+            <span className="font-medium">{error}</span>
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4 text-xs">
-          <div>
-            <label className="block font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-              Tên đăng nhập *
-            </label>
-            <div className="relative">
-              <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                value={username}
-                onChange={e => setUsername(e.target.value)}
-                placeholder="Giáo viên (gvcn) hoặc Mã HS (HS01, HS02...)"
-                className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-rose-200 text-slate-800 text-xs font-semibold focus:ring-2 focus:ring-[#E06D85]"
-              />
+        {/* Tab 1: Giáo viên */}
+        {activeTab === 'teacher' && (
+          <form onSubmit={handleTeacherSubmit} className="space-y-4">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                Mật khẩu giáo viên *
+              </label>
+              <div className="relative">
+                <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type={showTeacherPassword ? 'text' : 'password'}
+                  value={teacherPassword}
+                  onChange={e => setTeacherPassword(e.target.value)}
+                  placeholder="Nhập mật khẩu giáo viên"
+                  autoFocus
+                  className="w-full pl-10 pr-10 py-3 rounded-2xl border border-rose-200 text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-[#E06D85] focus:border-[#E06D85] transition-all"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowTeacherPassword(!showTeacherPassword)}
+                  aria-label="Hiện hoặc ẩn mật khẩu"
+                  className="absolute right-3.5 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600"
+                >
+                  {showTeacherPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
             </div>
-          </div>
 
-          <div>
-            <label className="block font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-              Mật khẩu *
-            </label>
-            <div className="relative">
-              <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-              <input
-                type={showPassword ? 'text' : 'password'}
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                placeholder="Nhập mật khẩu"
-                className="w-full pl-9 pr-10 py-2.5 rounded-xl border border-rose-200 text-slate-800 text-xs focus:ring-2 focus:ring-[#E06D85]"
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600"
-              >
-                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
-            </div>
-          </div>
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full py-3 rounded-2xl bg-[#E06D85] hover:bg-[#C94C67] text-white text-xs font-bold transition-all shadow-sm shadow-rose-200 flex items-center justify-center gap-2 disabled:opacity-50"
-          >
-            <KeyRound className="w-4 h-4" />
-            <span>{loading ? 'Đang xác thực...' : 'Đăng nhập vào hệ thống'}</span>
-          </button>
-        </form>
-
-        {/* Quick Credentials Helper - CHỈ HIỂN THỊ TRONG MÔI TRƯỜNG PHÁT TRIỂN (DEV) */}
-        {import.meta.env.DEV && (
-          <div className="pt-4 border-t border-rose-100 space-y-2">
-            <div className="flex items-center justify-center gap-1.5 text-[11px] font-bold text-amber-600 uppercase tracking-wider text-center">
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
-              Đăng nhập nhanh kiểm thử (Chỉ hiện khi phát triển - DEV)
-            </div>
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              <button
-                type="button"
-                onClick={() => handleQuickLogin('gvcn', 'Gvcn@2026')}
-                className="p-2.5 rounded-xl border border-rose-200 bg-rose-50/50 hover:bg-rose-100 text-left transition-colors"
-              >
-                <div className="font-bold text-[#C94C67]">Giáo viên chủ nhiệm</div>
-                <div className="text-[10px] text-slate-500 font-mono mt-0.5">gvcn / Gvcn@2026</div>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleQuickLogin('HS01', 'HS0112032009')}
-                className="p-2.5 rounded-xl border border-blue-200 bg-blue-50/50 hover:bg-blue-100 text-left transition-colors"
-              >
-                <div className="font-bold text-blue-700">Học sinh Nguyễn Văn An</div>
-                <div className="text-[10px] text-slate-500 font-mono mt-0.5">HS01 / HS0112032009</div>
-              </button>
-            </div>
-          </div>
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full py-3.5 rounded-2xl bg-[#E06D85] hover:bg-[#C94C67] text-white text-sm font-bold transition-all shadow-md shadow-rose-200/80 flex items-center justify-center gap-2 disabled:opacity-50 active:scale-[0.99]"
+            >
+              <KeyRound className="w-4 h-4" />
+              <span>{loading ? 'Đang xác thực...' : 'Đăng nhập Giáo viên'}</span>
+            </button>
+          </form>
         )}
 
-        <div className="text-[11px] text-slate-400 text-center pt-2 leading-relaxed border-t border-rose-50">
-          Học sinh có mật khẩu mặc định là: <strong>Mã học sinh + Ngày sinh (MSDDMMYYYY)</strong>
-        </div>
+        {/* Tab 2: Học sinh */}
+        {activeTab === 'student' && (
+          <form onSubmit={handleStudentSubmit} className="space-y-4">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                Mã học sinh *
+              </label>
+              <div className="relative">
+                <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={studentCode}
+                  onChange={e => setStudentCode(e.target.value)}
+                  placeholder="Ví dụ: HS01, HS02..."
+                  autoFocus
+                  className="w-full pl-10 pr-4 py-3 rounded-2xl border border-rose-200 text-slate-800 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-[#E06D85] focus:border-[#E06D85] transition-all uppercase"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                Mật khẩu *
+              </label>
+              <div className="relative">
+                <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type={showStudentPassword ? 'text' : 'password'}
+                  value={studentPassword}
+                  onChange={e => setStudentPassword(e.target.value)}
+                  placeholder="Nhập mật khẩu học sinh"
+                  className="w-full pl-10 pr-10 py-3 rounded-2xl border border-rose-200 text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-[#E06D85] focus:border-[#E06D85] transition-all"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowStudentPassword(!showStudentPassword)}
+                  aria-label="Hiện hoặc ẩn mật khẩu"
+                  className="absolute right-3.5 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600"
+                >
+                  {showStudentPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+
+            <div className="text-[11px] text-slate-500 bg-rose-50/50 p-3 rounded-xl border border-rose-100/70 leading-relaxed">
+              Mật khẩu mặc định: <strong>Mã học sinh + Ngày sinh (VD: HS0112032009)</strong>
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full py-3.5 rounded-2xl bg-[#E06D85] hover:bg-[#C94C67] text-white text-sm font-bold transition-all shadow-md shadow-rose-200/80 flex items-center justify-center gap-2 disabled:opacity-50 active:scale-[0.99]"
+            >
+              <ArrowRight className="w-4 h-4" />
+              <span>{loading ? 'Đang xác thực...' : 'Đăng nhập Học sinh'}</span>
+            </button>
+          </form>
+        )}
       </div>
     </div>
   );

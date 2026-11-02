@@ -276,7 +276,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         nextYear = `${parts[0] + 1} - ${parts[1] + 1}`;
       }
     }
-    setResetNewClassName(settings.className || '10A1');
+    setResetNewClassName(settings.className || '7A1');
     setResetNewSchoolName(settings.schoolName || 'THPT Chuyên Lê Hồng Phong');
     setResetNewSchoolYear(nextYear);
     setResetConfirmText('');

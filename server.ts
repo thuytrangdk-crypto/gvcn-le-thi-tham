@@ -276,7 +276,7 @@ function getInitialData() {
       studentId: 'HS10',
       studentName: 'Ngô Mỹ Linh',
       title: 'Huy chương Bạc Giải Cầu lông Học sinh TP',
-      description: 'Thi đấu kiên cường, mang lại niềm tự hào cho tập thể lớp 10A1.',
+      description: 'Thi đấu kiên cường, mang lại niềm tự hào cho tập thể lớp 7A1.',
       badge: 'medal' as const,
       date: '2026-10-18',
       isPublished: true
@@ -355,7 +355,7 @@ function getInitialData() {
     settings: {
       appName: 'GVCN – Lê Thị Thắm',
       schoolName: 'THPT Chuyên Lê Hồng Phong',
-      className: '10A1',
+      className: '7A1',
       teacherName: 'Cô Lê Thị Thắm',
       schoolYear: '2025 - 2026',
       baseConductScore: 100,
@@ -1359,7 +1359,19 @@ app.put('/api/conduct/evaluations', authMiddleware, requireTeacher, (req: any, r
 });
 
 // 17. Settings
-app.get('/api/settings', authMiddleware, (req: any, res: any) => {
+app.get('/api/settings/public', (_req: any, res: any) => {
+  const db = loadDb();
+  return res.json({
+    appName: db.settings.appName,
+    schoolName: db.settings.schoolName,
+    className: db.settings.className || '7A1',
+    teacherName: db.settings.teacherName,
+    schoolYear: db.settings.schoolYear || '2025 - 2026',
+    accentColor: db.settings.accentColor
+  });
+});
+
+app.get('/api/settings', (req: any, res: any) => {
   const db = loadDb();
   return res.json(db.settings);
 });
@@ -1378,7 +1390,7 @@ app.put('/api/settings', authMiddleware, requireTeacher, async (req: any, res: a
   // Tự động đồng bộ lên Supabase nếu đã có cấu hình kết nối
   if (isSupabaseConfigured && supabaseServer) {
     try {
-      const activeClassId = (db.settings.className || '10A1').trim();
+      const activeClassId = (db.settings.className || '7A1').trim();
       await supabaseServer.from('class_settings').upsert({
         class_id: activeClassId,
         app_name: db.settings.appName,
@@ -1454,8 +1466,8 @@ app.post('/api/settings/reset-school-year', authMiddleware, requireTeacher, asyn
   }
 
   const db = loadDb();
-  const oldClassId = (db.settings.className || '10A1').trim();
-  const updatedClassName = (newClassName || db.settings.className || '10A1').trim();
+  const oldClassId = (db.settings.className || '7A1').trim();
+  const updatedClassName = (newClassName || db.settings.className || '7A1').trim();
   const updatedSchoolName = (newSchoolName || db.settings.schoolName || 'THPT Chuyên Lê Hồng Phong').trim();
   const updatedSchoolYear = (newSchoolYear || '2026 - 2027').trim();
 
@@ -1683,7 +1695,7 @@ app.post('/api/supabase/sync-up', authMiddleware, requireTeacher, async (_req: a
   }
 
   const db = loadDb();
-  const activeClassId = (db.settings.className || '10A1').trim();
+  const activeClassId = (db.settings.className || '7A1').trim();
 
   try {
     await supabaseServer.from('class_settings').upsert({
