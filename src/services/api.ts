@@ -112,15 +112,20 @@ export const studentApi = {
   delete: (id: string) => request<{ success: boolean; message: string }>(`/api/students/${id}`, {
     method: 'DELETE'
   }),
-  import: (students: Partial<Student>[]) => request<{
+  import: (students: Partial<Student>[], mode: 'append' | 'replace' = 'append') => request<{
     totalProcessed: number;
     successCount: number;
     errorCount: number;
     errors: Array<{ row: number; code?: string; name?: string; reason: string }>;
     imported: Student[];
+    mode: 'append' | 'replace';
   }>('/api/students/import', {
     method: 'POST',
-    body: JSON.stringify({ students })
+    body: JSON.stringify({ students, mode })
+  }),
+  cleanClass: (confirmText: string) => request<{ success: boolean; message: string }>('/api/students/clean-class', {
+    method: 'POST',
+    body: JSON.stringify({ confirmText })
   }),
   getProfile: (id: string) => request<{
     student: Student;
@@ -578,5 +583,77 @@ export const excelService = {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Ket_Qua_Hoc_Tap');
     XLSX.writeFile(wb, `Bang_Diem_Lop_${new Date().toISOString().substring(0, 10)}.xlsx`);
+  },
+
+  // 7. Export Conduct & Discipline Report
+  exportConductReport: (
+    students: Student[],
+    conductLogs: ConductLog[],
+    settings: AppSettings,
+    periodName = 'Toàn năm học'
+  ) => {
+    const baseScore = settings.baseConductScore || 100;
+    const scores: Record<string, { total: number; plus: number; minus: number; violations: number }> = {};
+
+    students.forEach(s => {
+      scores[s.id] = { total: baseScore, plus: 0, minus: 0, violations: 0 };
+    });
+
+    conductLogs.forEach(log => {
+      if (scores[log.studentId]) {
+        scores[log.studentId].total += log.points;
+        if (log.points > 0) {
+          scores[log.studentId].plus += log.points;
+        } else if (log.points < 0) {
+          scores[log.studentId].minus += Math.abs(log.points);
+          scores[log.studentId].violations += 1;
+        }
+      }
+    });
+
+    const getTier = (score: number) => {
+      if (score >= 90) return 'Tốt';
+      if (score >= 75) return 'Khá';
+      if (score >= 60) return 'Đạt';
+      return 'Cần rèn luyện';
+    };
+
+    const data = students.map((s, idx) => {
+      const stat = scores[s.id] || { total: baseScore, plus: 0, minus: 0, violations: 0 };
+      return {
+        'STT': idx + 1,
+        'Mã học sinh': s.code,
+        'Họ và tên': s.name,
+        'Giới tính': s.gender,
+        'Điểm ban đầu': baseScore,
+        'Tổng điểm cộng': `+${stat.plus}`,
+        'Tổng điểm trừ': `-${stat.minus}`,
+        'Điểm thi đua hiện tại': stat.total,
+        'Số lượt vi phạm': stat.violations,
+        'Xếp loại': getTier(stat.total),
+        'Lớp': settings.className || '7A1',
+        'Năm học': settings.schoolYear || '2025 - 2026'
+      };
+    });
+
+    const ws = XLSX.utils.json_to_sheet(data);
+    ws['!cols'] = [
+      { wch: 6 },
+      { wch: 14 },
+      { wch: 25 },
+      { wch: 10 },
+      { wch: 14 },
+      { wch: 16 },
+      { wch: 16 },
+      { wch: 22 },
+      { wch: 16 },
+      { wch: 16 },
+      { wch: 12 },
+      { wch: 16 }
+    ];
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Bao_Cao_Thi_Dua');
+    XLSX.writeFile(wb, `Bao_Cao_Thi_Dua_${settings.className || '7A1'}_${new Date().toISOString().substring(0, 10)}.xlsx`);
   }
 };

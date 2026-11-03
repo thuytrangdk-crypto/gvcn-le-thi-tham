@@ -747,16 +747,32 @@ app.delete('/api/students/:id', authMiddleware, requireTeacher, (req: any, res: 
 });
 
 // 9. Bulk Import Students (Teacher only)
+// 9. Bulk Import Students (Teacher only) - Supports Mode A (replace) and Mode B (append)
 app.post('/api/students/import', authMiddleware, requireTeacher, (req: any, res: any) => {
-  const { students: importList } = req.body;
+  const { students: importList, mode = 'append' } = req.body;
   if (!Array.isArray(importList) || importList.length === 0) {
     return res.status(400).json({ error: 'Dữ liệu nhập trống hoặc không hợp lệ' });
   }
 
   const db = loadDb();
+
+  // Mode A: Thay thế toàn bộ danh sách lớp
+  if (mode === 'replace') {
+    db.students = [];
+    db.attendance = [];
+    db.grades = [];
+    db.conductLogs = [];
+    db.honors = [];
+    db.periodEvaluations = {};
+    if (db.seating && Array.isArray(db.seating.seats)) {
+      db.seating.seats.forEach((seat: any) => {
+        seat.studentId = null;
+      });
+    }
+  }
+
   const successRows: any[] = [];
   const errorRows: { row: number; code?: string; name?: string; reason: string }[] = [];
-
   const existingCodes = new Set(db.students.map((s: any) => s.code.toUpperCase()));
 
   importList.forEach((item: any, idx: number) => {
@@ -767,6 +783,9 @@ app.post('/api/students/import', authMiddleware, requireTeacher, (req: any, res:
     const dob = item.dob ? String(item.dob).trim() : '';
     const phone = item.phone ? String(item.phone).trim() : '';
     const address = item.address ? String(item.address).trim() : '';
+    const parentName = item.parentName ? String(item.parentName).trim() : '';
+    const parentPhone = item.parentPhone ? String(item.parentPhone).trim() : '';
+    const notes = item.notes ? String(item.notes).trim() : '';
 
     if (!code) {
       errorRows.push({ row: rowNum, name, reason: 'Mã học sinh không được để trống' });
@@ -792,6 +811,9 @@ app.post('/api/students/import', authMiddleware, requireTeacher, (req: any, res:
       dob: dob || '01/01/2009',
       phone,
       address,
+      parentName,
+      parentPhone,
+      notes,
       passwordHash: cred.hash,
       passwordSalt: cred.salt,
       customPasswordSet: false,
@@ -809,7 +831,42 @@ app.post('/api/students/import', authMiddleware, requireTeacher, (req: any, res:
     successCount: successRows.length,
     errorCount: errorRows.length,
     errors: errorRows,
-    imported: successRows
+    imported: successRows,
+    mode
+  });
+});
+
+// 9b. Làm sạch dữ liệu lớp (Teacher only - Safe class cleanup)
+app.post('/api/students/clean-class', authMiddleware, requireTeacher, (req: any, res: any) => {
+  const { confirmText } = req.body;
+  if (!confirmText || confirmText.trim().toUpperCase() !== 'LAM SACH LOP') {
+    return res.status(400).json({
+      error: 'Vui lòng nhập chính xác cụm từ "LAM SACH LOP" để xác nhận thực hiện thao tác làm sạch.'
+    });
+  }
+
+  const db = loadDb();
+  const studentCount = db.students.length;
+
+  // Xóa danh sách học sinh và dữ liệu vận hành liên quan của lớp hiện tại
+  db.students = [];
+  db.attendance = [];
+  db.grades = [];
+  db.conductLogs = [];
+  db.honors = [];
+  db.periodEvaluations = {};
+  if (db.seating && Array.isArray(db.seating.seats)) {
+    db.seating.seats.forEach((seat: any) => {
+      seat.studentId = null;
+    });
+  }
+
+  // Lưu lại cài đặt lớp, cấu hình trường và tài khoản giáo viên nguyên vẹn
+  saveDb(db);
+
+  return res.json({
+    success: true,
+    message: `Đã làm sạch dữ liệu lớp (${studentCount} học sinh). Cài đặt lớp và tài khoản giáo viên được giữ nguyên.`
   });
 });
 

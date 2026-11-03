@@ -266,53 +266,67 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-[#FFF8F9] flex flex-col antialiased">
-      {/* Top Header */}
-      <Header
+    <div className="min-h-screen bg-[#FFF8F9] flex flex-col lg:flex-row antialiased">
+      {/* Sidebar matching 8A3 structure (sticky on desktop, drawer on mobile) */}
+      <Sidebar
+        currentTab={currentTab}
+        onSelectTab={handleSelectTab}
+        userRole={user?.role}
         user={user}
         settings={settings}
+        isOpenMobile={mobileMenuOpen}
+        onCloseMobile={() => setMobileMenuOpen(false)}
         onLogout={handleLogout}
-        onOpenLogin={() => setShowLoginModal(true)}
         onChangePassword={() => setShowChangePasswordModal(true)}
-        onNavigateHome={() => {
-          setSelectedStudentId(null);
-          setCurrentTab('dashboard');
-        }}
       />
 
-      {/* Mobile Bar for Hamburger Menu */}
-      <div className="lg:hidden bg-white border-b border-rose-100 px-4 py-2 flex items-center justify-between">
-        <button
-          onClick={() => setMobileMenuOpen(true)}
-          className="p-1.5 rounded-lg text-slate-600 hover:bg-rose-50 flex items-center gap-2 text-xs font-semibold"
-        >
-          <Menu className="w-5 h-5 text-[#E06D85]" />
-          <span>Danh mục chức năng</span>
-        </button>
+      {/* Main Viewport Container */}
+      <div className="flex-1 min-w-0 flex flex-col">
+        {/* Mobile Header Bar (Only visible < 1024px) */}
+        <div className="lg:hidden sticky top-0 z-20 bg-white border-b border-rose-100 px-4 py-2.5 flex items-center justify-between shadow-2xs">
+          <button
+            onClick={() => setMobileMenuOpen(true)}
+            className="p-1.5 rounded-xl text-slate-700 hover:bg-rose-50 flex items-center gap-2 text-xs font-bold"
+          >
+            <Menu className="w-5 h-5 text-[#E06D85]" />
+            <span>Menu chức năng</span>
+          </button>
 
-        <span className="text-xs font-bold text-[#C94C67]">
-          {currentTab === 'dashboard' && 'Tổng quan'}
-          {currentTab === 'notices_seating' && 'Bảng tin & Sơ đồ lớp'}
-          {currentTab === 'students' && (selectedStudentId ? 'Hồ sơ học sinh' : 'Học sinh')}
-          {currentTab === 'conduct' && 'Thi đua & Rèn luyện'}
-          {currentTab === 'attendance' && 'Điểm danh'}
-          {currentTab === 'academics' && 'Học tập'}
-          {currentTab === 'settings' && 'Cài đặt'}
-        </span>
-      </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-extrabold text-[#C94C67] px-2 py-0.5 rounded-md bg-rose-50 border border-rose-200/60">
+              Lớp {settings.className || '7A1'}
+            </span>
+            <span className="text-xs font-bold text-slate-700">
+              {currentTab === 'dashboard' && 'Tổng quan'}
+              {currentTab === 'notices_seating' && 'Bảng tin & Sơ đồ'}
+              {currentTab === 'students' && (selectedStudentId ? 'Hồ sơ' : 'Học sinh')}
+              {currentTab === 'conduct' && 'Thi đua'}
+              {currentTab === 'attendance' && 'Điểm danh'}
+              {currentTab === 'academics' && 'Học tập'}
+              {currentTab === 'settings' && 'Cài đặt'}
+            </span>
+          </div>
 
-      {/* Main Layout (Sidebar + Content Viewport) */}
-      <div className="flex-1 flex max-w-7xl w-full mx-auto">
-        <Sidebar
-          currentTab={currentTab}
-          onSelectTab={handleSelectTab}
-          userRole={user?.role}
-          isOpenMobile={mobileMenuOpen}
-          onCloseMobile={() => setMobileMenuOpen(false)}
-        />
+          {user ? (
+            <button
+              onClick={handleLogout}
+              className="text-xs text-rose-600 font-bold px-2 py-1 rounded-lg hover:bg-rose-50"
+              title="Đăng xuất"
+            >
+              Thoát
+            </button>
+          ) : (
+            <button
+              onClick={() => setShowLoginModal(true)}
+              className="px-2.5 py-1 rounded-xl bg-[#E06D85] text-white text-xs font-bold"
+            >
+              Đăng nhập
+            </button>
+          )}
+        </div>
 
-        {/* Main Content Area */}
-        <main className="flex-1 min-w-0 p-4 sm:p-6 lg:p-8">
+        {/* Main Content Viewport */}
+        <main className="flex-1 min-w-0 p-4 sm:p-6 lg:p-7 max-w-7xl w-full mx-auto">
           {/* 1. Dashboard View */}
           {currentTab === 'dashboard' && (
             <DashboardView
@@ -367,12 +381,20 @@ export default function App() {
               <StudentListView
                 students={students}
                 userRole={user?.role || 'teacher'}
+                attendance={attendance}
+                conductLogs={conductLogs}
+                settings={settings}
                 onOpenProfile={(id, initialTab) => handleOpenStudentProfile(id, (initialTab as any) || 'info')}
                 onCreateStudent={handleCreateStudent}
                 onUpdateStudent={handleUpdateStudent}
                 onDeleteStudent={handleDeleteStudent}
                 onImportStudents={handleImportStudents}
                 onResetPassword={handleResetStudentPassword}
+                onCleanClass={async (confirmText) => {
+                  const res = await studentApi.cleanClass(confirmText);
+                  await loadAllData();
+                  return res;
+                }}
               />
             )
           )}
