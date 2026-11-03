@@ -41,9 +41,9 @@ export default function App() {
   const [user, setUser] = useState<UserSession | null>(null);
   const [settings, setSettings] = useState<AppSettings>({
     appName: 'GVCN – Lê Thị Thắm',
-    schoolName: 'THPT Chuyên Lê Hồng Phong',
+    schoolName: 'TRƯỜNG THCS NGUYỄN HUỆ',
     className: '7A1',
-    teacherName: 'Cô Lê Thị Thắm',
+    teacherName: 'Lê Thị Thắm',
     schoolYear: '2025 - 2026',
     baseConductScore: 100,
     accentColor: '#E06D85',
@@ -75,6 +75,14 @@ export default function App() {
   // Load all app data
   const loadAllData = useCallback(async () => {
     try {
+      // 0. Always fetch public settings first so school name & year are persistent even before login
+      try {
+        const pubSettings = await settingsApi.getPublic();
+        if (pubSettings) {
+          setSettings(prev => ({ ...prev, ...pubSettings }));
+        }
+      } catch {}
+
       // 1. Check current session
       const meRes = await authApi.getMe().catch(() => null);
       if (meRes) {
@@ -349,6 +357,7 @@ export default function App() {
               honors={honors}
               students={students}
               user={user}
+              settings={settings}
               onSaveSeating={handleSaveSeating}
               onCreateAnnouncement={handleCreateAnnouncement}
               onUpdateAnnouncement={handleUpdateAnnouncement}

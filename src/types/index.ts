@@ -24,6 +24,25 @@ export interface Student {
   customPasswordSet?: boolean;
 }
 
+export interface AnnouncementImage {
+  id: string;
+  url: string;
+  name?: string;
+}
+
+export interface AnnouncementVideo {
+  id: string;
+  url: string;
+  name: string;
+  size?: number;
+}
+
+export interface AnnouncementLink {
+  id: string;
+  title: string;
+  url: string;
+}
+
 export interface Announcement {
   id: string;
   title: string;
@@ -34,6 +53,10 @@ export interface Announcement {
   isPublished: boolean;
   category: 'Chung' | 'Học tập' | 'Hoạt động' | 'Khẩn cấp';
   attachmentName?: string;
+  type?: 'announcement' | 'honor';
+  images?: AnnouncementImage[];
+  videos?: AnnouncementVideo[];
+  links?: AnnouncementLink[];
 }
 
 export interface Seat {

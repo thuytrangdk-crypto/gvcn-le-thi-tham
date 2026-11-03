@@ -277,7 +277,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       }
     }
     setResetNewClassName(settings.className || '7A1');
-    setResetNewSchoolName(settings.schoolName || 'THPT Chuyên Lê Hồng Phong');
+    setResetNewSchoolName(settings.schoolName || 'TRƯỜNG THCS NGUYỄN HUỆ');
     setResetNewSchoolYear(nextYear);
     setResetConfirmText('');
     setResetError(null);
@@ -1497,7 +1497,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
                   type="text"
                   value={resetNewSchoolName}
                   onChange={e => setResetNewSchoolName(e.target.value)}
-                  placeholder="VD: THPT Chuyên Lê Hồng Phong"
+                  placeholder="VD: TRƯỜNG THCS NGUYỄN HUỆ"
                   className="w-full px-3.5 py-2.5 rounded-xl border border-rose-200 font-semibold text-slate-800 focus:ring-2 focus:ring-[#E06D85]"
                 />
               </div>

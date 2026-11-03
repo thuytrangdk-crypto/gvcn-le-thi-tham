@@ -335,7 +335,7 @@ function getInitialData() {
     teacher: {
       id: 'teacher-main',
       username: 'gvcn',
-      name: 'Cô Lê Thị Thắm',
+      name: 'Lê Thị Thắm',
       role: 'teacher',
       passwordHash: teacherCreds.hash,
       passwordSalt: teacherCreds.salt
@@ -354,9 +354,9 @@ function getInitialData() {
     periodEvaluations: {},
     settings: {
       appName: 'GVCN – Lê Thị Thắm',
-      schoolName: 'THPT Chuyên Lê Hồng Phong',
+      schoolName: 'TRƯỜNG THCS NGUYỄN HUỆ',
       className: '7A1',
-      teacherName: 'Cô Lê Thị Thắm',
+      teacherName: 'Lê Thị Thắm',
       schoolYear: '2025 - 2026',
       baseConductScore: 100,
       accentColor: '#E06D85',
@@ -374,37 +374,58 @@ function getInitialData() {
 
 // Load DB with safe fallback for Vercel Serverless environment
 function loadDb(): any {
-  if (!fs.existsSync(DB_FILE)) {
-    let initial: any = null;
-    const localDbPath = path.join(__dirname, 'data', 'db.json');
-    if (fs.existsSync(localDbPath)) {
-      try {
-        initial = JSON.parse(fs.readFileSync(localDbPath, 'utf-8'));
-      } catch {}
-    }
-    if (!initial) {
-      initial = getInitialData();
-    }
+  let db: any = null;
+  const localDbPath = path.join(__dirname, 'data', 'db.json');
+
+  if (fs.existsSync(DB_FILE)) {
     try {
+      db = JSON.parse(fs.readFileSync(DB_FILE, 'utf-8'));
+    } catch (e) {
+      console.warn('Error reading DB_FILE:', e);
+    }
+  }
+
+  if (!db && fs.existsSync(localDbPath)) {
+    try {
+      db = JSON.parse(fs.readFileSync(localDbPath, 'utf-8'));
+    } catch (e) {
+      console.warn('Error reading localDbPath:', e);
+    }
+  }
+
+  if (!db) {
+    db = getInitialData();
+  }
+
+  // Ensure default structure if any field is missing
+  if (!db.settings) db.settings = getInitialData().settings;
+  if (!db.teacher) db.teacher = getInitialData().teacher;
+  if (!db.students) db.students = [];
+  if (!db.announcements) db.announcements = [];
+  if (!db.honors) db.honors = [];
+  if (!db.seating) db.seating = { seats: [], updatedAt: new Date().toISOString() };
+
+  // Write to disk if missing
+  try {
+    if (!fs.existsSync(DB_FILE)) {
       if (!fs.existsSync(DATA_DIR)) {
         fs.mkdirSync(DATA_DIR, { recursive: true });
       }
-      fs.writeFileSync(DB_FILE, JSON.stringify(initial, null, 2), 'utf-8');
-    } catch (err) {
-      console.warn('Notice: Could not write DB_FILE to filesystem:', err);
+      fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2), 'utf-8');
     }
-    return initial;
-  }
-  try {
-    const raw = fs.readFileSync(DB_FILE, 'utf-8');
-    return JSON.parse(raw);
-  } catch (err) {
-    console.error('Error reading DB, using initial:', err);
-    return getInitialData();
-  }
+    if (!fs.existsSync(localDbPath)) {
+      const localDataDir = path.join(__dirname, 'data');
+      if (!fs.existsSync(localDataDir)) {
+        fs.mkdirSync(localDataDir, { recursive: true });
+      }
+      fs.writeFileSync(localDbPath, JSON.stringify(db, null, 2), 'utf-8');
+    }
+  } catch {}
+
+  return db;
 }
 
-// Atomic Save DB (handles serverless writable /tmp and catches disk errors)
+// Atomic Save DB (handles serverless writable /tmp and mirrors to root data/db.json)
 function saveDb(data: any): void {
   try {
     if (!fs.existsSync(DATA_DIR)) {
@@ -416,6 +437,18 @@ function saveDb(data: any): void {
   } catch (err) {
     console.warn('Warning: Could not save DB to disk in current runtime:', err);
   }
+
+  // Also mirror save to data/db.json for persistence in container/local filesystem
+  try {
+    const localDataDir = path.join(__dirname, 'data');
+    if (!fs.existsSync(localDataDir)) {
+      fs.mkdirSync(localDataDir, { recursive: true });
+    }
+    const localDbPath = path.join(localDataDir, 'db.json');
+    if (path.resolve(localDbPath) !== path.resolve(DB_FILE)) {
+      fs.writeFileSync(localDbPath, JSON.stringify(data, null, 2), 'utf-8');
+    }
+  } catch {}
 }
 
 // Authentication Middleware (supports stateless signed tokens across Vercel function instances)
@@ -955,7 +988,7 @@ app.get('/api/announcements', authMiddleware, (req: any, res: any) => {
 });
 
 app.post('/api/announcements', authMiddleware, requireTeacher, (req: any, res: any) => {
-  const { title, content, isPinned, isPublished, category, attachmentName } = req.body;
+  const { title, content, isPinned, isPublished, category, attachmentName, type, images, videos, links } = req.body;
   if (!title || !content) {
     return res.status(400).json({ error: 'Vui lòng nhập tiêu đề và nội dung thông báo' });
   }
@@ -964,12 +997,16 @@ app.post('/api/announcements', authMiddleware, requireTeacher, (req: any, res: a
     id: `ann-${Date.now()}`,
     title: title.trim(),
     content: content.trim(),
-    author: db.settings.teacherName || 'GVCN',
+    author: db.settings.teacherName || 'Lê Thị Thắm',
     createdAt: new Date().toISOString().replace('T', ' ').substring(0, 16),
     isPinned: Boolean(isPinned),
     isPublished: isPublished !== undefined ? Boolean(isPublished) : true,
     category: category || 'Chung',
-    attachmentName
+    attachmentName: attachmentName || '',
+    type: type || 'announcement',
+    images: Array.isArray(images) ? images : [],
+    videos: Array.isArray(videos) ? videos : [],
+    links: Array.isArray(links) ? links : []
   };
   db.announcements.unshift(newAnn);
   saveDb(db);
@@ -1525,7 +1562,7 @@ app.post('/api/settings/reset-school-year', authMiddleware, requireTeacher, asyn
   const db = loadDb();
   const oldClassId = (db.settings.className || '7A1').trim();
   const updatedClassName = (newClassName || db.settings.className || '7A1').trim();
-  const updatedSchoolName = (newSchoolName || db.settings.schoolName || 'THPT Chuyên Lê Hồng Phong').trim();
+  const updatedSchoolName = (newSchoolName || db.settings.schoolName || 'TRƯỜNG THCS NGUYỄN HUỆ').trim();
   const updatedSchoolYear = (newSchoolYear || '2026 - 2027').trim();
 
   // Reset operational data for the current year
