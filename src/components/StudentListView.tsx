@@ -312,82 +312,69 @@ export const StudentListView: React.FC<StudentListViewProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* 1. Action Toolbar */}
-      <div className="bg-white p-4 sm:p-5 rounded-3xl border border-rose-100 shadow-xs flex flex-col xl:flex-row xl:items-center justify-between gap-4">
-        {/* Left: Search & Gender filter & View Mode Toggle */}
-        <div className="flex flex-1 items-center gap-3 flex-wrap sm:flex-nowrap">
-          {/* Search Bar */}
-          <div className="relative flex-1 min-w-[200px]">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={e => setSearchTerm(e.target.value)}
-              placeholder="Tìm theo họ tên, mã học sinh, SĐT..."
-              className="w-full pl-9 pr-4 py-2.5 rounded-2xl bg-slate-50 border border-slate-200/80 text-xs sm:text-sm text-slate-800 placeholder-slate-400 focus:outline-hidden focus:ring-2 focus:ring-[#E06D85] focus:bg-white transition-all"
-            />
-          </div>
+      {/* 1. Action Toolbar (Chuẩn Ảnh 1 - Tinh gọn, đồng bộ chiều cao, không chồng lấn) */}
+      <div className="bg-white p-3 sm:p-4 rounded-2xl border border-rose-100 shadow-2xs flex flex-wrap items-center gap-2 sm:gap-2.5">
+        {/* 1. Ô tìm kiếm học sinh */}
+        <div className="relative flex-1 min-w-[170px] sm:min-w-[210px] max-w-xs sm:max-w-sm">
+          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={e => setSearchTerm(e.target.value)}
+            placeholder="Tìm theo họ tên, ngày sinh..."
+            className="w-full h-10 pl-9 pr-3 rounded-xl bg-slate-50 border border-slate-200/80 text-xs sm:text-sm text-slate-800 placeholder-slate-400 focus:outline-hidden focus:ring-2 focus:ring-[#EDB5C1] focus:bg-white transition-all"
+          />
+        </div>
 
-          {/* Gender Filter Buttons */}
-          <div className="flex items-center gap-1 bg-slate-100/80 p-1 rounded-2xl shrink-0">
-            <button
-              onClick={() => setGenderFilter('ALL')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                genderFilter === 'ALL' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              Tất cả ({students.length})
-            </button>
-            <button
-              onClick={() => setGenderFilter('Nam')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                genderFilter === 'Nam' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-500 hover:text-blue-700'
-              }`}
-            >
-              Nam
-            </button>
-            <button
-              onClick={() => setGenderFilter('Nữ')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                genderFilter === 'Nữ' ? 'bg-white text-rose-700 shadow-xs' : 'text-slate-500 hover:text-rose-700'
-              }`}
-            >
-              Nữ
-            </button>
-          </div>
-
-          {/* View Mode Toggle: Grid Card vs Table */}
-          <div className="flex items-center gap-1 bg-slate-100/80 p-1 rounded-2xl shrink-0">
-            <button
-              onClick={() => handleSetViewMode('card')}
-              className={`p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
-                viewMode === 'card'
-                  ? 'bg-white text-[#C94C67] shadow-xs'
-                  : 'text-slate-500 hover:text-slate-800'
-              }`}
-              title="Chế độ hiển thị dạng thẻ học sinh"
-            >
-              <LayoutGrid className="w-4 h-4 text-[#E06D85]" />
-              <span className="hidden sm:inline">Dạng thẻ</span>
-            </button>
-            <button
-              onClick={() => handleSetViewMode('table')}
-              className={`p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
-                viewMode === 'table'
-                  ? 'bg-white text-[#C94C67] shadow-xs'
-                  : 'text-slate-500 hover:text-slate-800'
-              }`}
-              title="Chế độ hiển thị bảng danh sách đầy đủ"
-            >
-              <List className="w-4 h-4 text-[#E06D85]" />
-              <span className="hidden sm:inline">Dạng bảng</span>
-            </button>
+        {/* 2. Bộ lọc giới tính (Dropdown gọn như Ảnh 1: "Tất cả giới tính ⌵") */}
+        <div className="relative shrink-0">
+          <select
+            value={genderFilter}
+            onChange={e => setGenderFilter(e.target.value as any)}
+            className="h-10 pl-3 pr-8 rounded-xl bg-white border border-slate-200/90 text-xs font-semibold text-slate-700 hover:border-slate-300 focus:outline-hidden focus:ring-2 focus:ring-[#EDB5C1] appearance-none cursor-pointer transition-all shadow-2xs"
+          >
+            <option value="ALL">Tất cả giới tính ({students.length})</option>
+            <option value="Nam">Nam ({students.filter(s => s.gender === 'Nam').length})</option>
+            <option value="Nữ">Nữ ({students.filter(s => s.gender === 'Nữ').length})</option>
+          </select>
+          <div className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
+            <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 20 20">
+              <path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" />
+            </svg>
           </div>
         </div>
 
-        {/* Right: Action Buttons for Teacher */}
+        {/* 3. Chuyển đổi chế độ xem Dạng thẻ / Dạng bảng (Icon toggle group như Ảnh 1) */}
+        <div className="flex items-center bg-slate-100/90 p-1 rounded-xl shrink-0 h-10 border border-slate-200/60">
+          <button
+            type="button"
+            onClick={() => handleSetViewMode('card')}
+            className={`h-8 w-8 rounded-lg flex items-center justify-center transition-all ${
+              viewMode === 'card'
+                ? 'bg-white text-[#C94C67] shadow-xs'
+                : 'text-slate-500 hover:text-slate-800'
+            }`}
+            title="Chế độ xem dạng thẻ học sinh"
+          >
+            <LayoutGrid className="w-4 h-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => handleSetViewMode('table')}
+            className={`h-8 w-8 rounded-lg flex items-center justify-center transition-all ${
+              viewMode === 'table'
+                ? 'bg-white text-[#C94C67] shadow-xs'
+                : 'text-slate-500 hover:text-slate-800'
+            }`}
+            title="Chế độ xem dạng bảng danh sách"
+          >
+            <List className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Các nút chức năng (Dành cho Giáo viên) */}
         {isTeacher && (
-          <div className="flex items-center gap-2 flex-wrap shrink-0">
+          <>
             <input
               type="file"
               ref={fileInputRef}
@@ -396,50 +383,51 @@ export const StudentListView: React.FC<StudentListViewProps> = ({
               onChange={handleFileUpload}
             />
 
-            {/* Export Excel (Student List) */}
+            {/* 4. Xuất Excel danh sách học sinh */}
             <button
               type="button"
               onClick={() => excelService.exportStudents(students)}
-              className="px-3 py-2 rounded-2xl border border-slate-200 text-slate-700 text-xs font-bold hover:bg-slate-50 flex items-center gap-1.5 transition-colors shadow-2xs"
-              title="Xuất toàn bộ danh sách học sinh lớp ra file Excel"
+              className="h-10 px-3 rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:border-slate-300 text-xs font-semibold flex items-center gap-1.5 transition-all shadow-2xs shrink-0 whitespace-nowrap"
+              title="Xuất toàn bộ danh sách học sinh ra file Excel"
             >
-              <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+              <FileSpreadsheet className="w-4 h-4 text-emerald-600 shrink-0" />
               <span>Xuất Excel</span>
             </button>
 
-            {/* Export Conduct Report */}
+            {/* 5. Xuất Excel thi đua */}
             <button
               type="button"
               onClick={() => excelService.exportConductReport(students, conductLogs, settings)}
-              className="px-3 py-2 rounded-2xl border border-slate-200 text-slate-700 text-xs font-bold hover:bg-slate-50 flex items-center gap-1.5 transition-colors shadow-2xs"
-              title="Xuất báo cáo tổng hợp thi đua, nề nếp và xếp loại học sinh ra Excel"
+              className="h-10 px-3 rounded-xl border border-purple-200 bg-purple-50/40 hover:bg-purple-50 text-purple-700 text-xs font-semibold flex items-center gap-1.5 transition-all shadow-2xs shrink-0 whitespace-nowrap"
+              title="Xuất báo cáo tổng hợp thi đua ra Excel"
             >
-              <Download className="w-4 h-4 text-purple-600" />
+              <Download className="w-4 h-4 text-purple-600 shrink-0" />
               <span>Xuất Excel thi đua</span>
             </button>
 
-            {/* Import Excel */}
+            {/* 6. Nhập Excel */}
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              className="px-3 py-2 rounded-2xl border border-emerald-200 text-emerald-800 bg-emerald-50/70 hover:bg-emerald-100 text-xs font-bold flex items-center gap-1.5 transition-colors shadow-2xs"
+              className="h-10 px-3 rounded-xl border border-emerald-200 bg-emerald-50/50 hover:bg-emerald-100/70 text-emerald-800 text-xs font-semibold flex items-center gap-1.5 transition-all shadow-2xs shrink-0 whitespace-nowrap"
               title="Nhập danh sách học sinh từ file Excel"
             >
-              <Upload className="w-4 h-4 text-emerald-700" />
+              <Upload className="w-4 h-4 text-emerald-700 shrink-0" />
               <span>Nhập Excel</span>
             </button>
 
-            {/* Add Student */}
+            {/* 7. Thêm học sinh (Nút xanh dương chuẩn Ảnh 1) */}
             <button
               type="button"
               onClick={handleOpenAdd}
-              className="px-4 py-2 rounded-2xl bg-[#E06D85] text-white text-xs font-extrabold hover:bg-[#C94C67] flex items-center gap-1.5 transition-all shadow-md shadow-rose-200/60"
+              className="h-10 px-3.5 rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs shrink-0 whitespace-nowrap"
+              title="Thêm học sinh mới vào lớp"
             >
-              <Plus className="w-4 h-4" />
-              <span>Thêm học sinh</span>
+              <Plus className="w-4 h-4 shrink-0" />
+              <span>Thêm HS</span>
             </button>
 
-            {/* Clean Class Data (Làm sạch lớp) */}
+            {/* 8. Làm sạch lớp */}
             <button
               type="button"
               onClick={() => {
@@ -447,169 +435,93 @@ export const StudentListView: React.FC<StudentListViewProps> = ({
                 setCleanError('');
                 setShowCleanModal(true);
               }}
-              className="px-3 py-2 rounded-2xl border border-rose-200 text-rose-700 bg-rose-50/60 hover:bg-rose-100 text-xs font-bold flex items-center gap-1.5 transition-colors shadow-2xs ml-auto sm:ml-0"
-              title="Làm sạch danh sách học sinh và dữ liệu lớp (chỉ khi cần dọn dữ liệu chuẩn bị nạp mới)"
+              className="h-10 px-3 rounded-xl border border-rose-200 bg-rose-50/40 hover:bg-rose-100/60 text-rose-700 text-xs font-semibold flex items-center gap-1.5 transition-all shadow-2xs shrink-0 whitespace-nowrap"
+              title="Làm sạch danh sách học sinh và dữ liệu lớp (khi cần dọn dữ liệu chuẩn bị nạp mới)"
             >
-              <RotateCcw className="w-3.5 h-3.5 text-rose-600" />
+              <Trash2 className="w-3.5 h-3.5 text-rose-600 shrink-0" />
               <span>Làm sạch lớp</span>
             </button>
-          </div>
+          </>
         )}
       </div>
 
-      {/* 2. CHẾ ĐỘ HIỂN THỊ DẠNG THẺ (CARD VIEW - 8A3 Style) */}
+      {/* 2. CHẾ ĐỘ HIỂN THỊ DẠNG THẺ (CARD VIEW - Chuẩn Ảnh 1: Thu gọn, 5 thẻ/hàng) */}
       {viewMode === 'card' && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-5 gap-3 sm:gap-3.5">
           {filteredStudents.map(st => {
             const todayStatus = attendanceTodayMap.get(st.id);
             const stats = studentConductStats.get(st.id) || { violations: 0, merits: 0, score: 100 };
             const isFemale = st.gender === 'Nữ';
+            const hasIssue = stats.violations > 0 || todayStatus === 'unexcused_absence' || todayStatus === 'late';
 
             return (
               <div
                 key={st.id}
-                className="bg-white rounded-3xl p-5 border border-rose-100/90 shadow-xs hover:shadow-md hover:border-rose-300 transition-all flex flex-col justify-between group relative overflow-hidden"
+                onClick={() => onOpenProfile(st.id)}
+                className="bg-white rounded-2xl p-3.5 border border-slate-200/80 hover:border-[#EDB5C1] hover:shadow-md transition-all flex flex-col items-center justify-between text-center relative cursor-pointer group select-none min-h-[175px]"
+                title={`Nhấp để xem hồ sơ chi tiết của ${st.name}`}
               >
-                {/* Top of Card: Avatar + Gender + Actions */}
-                <div>
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <div
-                        className={`w-12 h-12 rounded-2xl flex items-center justify-center font-extrabold text-base shadow-2xs shrink-0 ${
-                          isFemale
-                            ? 'bg-rose-50 text-rose-600 border border-rose-100'
-                            : 'bg-blue-50 text-blue-600 border border-blue-100'
-                        }`}
-                      >
-                        {getInitial(st.name)}
-                      </div>
-                      <div className="min-w-0">
-                        <span className="font-mono text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
-                          {st.code}
-                        </span>
-                        <h4
-                          onClick={() => onOpenProfile(st.id)}
-                          className="font-extrabold text-sm sm:text-base text-slate-900 group-hover:text-rose-700 transition-colors truncate cursor-pointer leading-tight mt-0.5"
-                          title={st.name}
-                        >
-                          {st.name}
-                        </h4>
-                      </div>
-                    </div>
-
-                    <span
-                      className={`px-2 py-0.5 rounded-lg text-[10px] font-extrabold uppercase shrink-0 ${
-                        isFemale
-                          ? 'bg-rose-50 text-rose-700 border border-rose-200/60'
-                          : 'bg-blue-50 text-blue-700 border border-blue-200/60'
-                      }`}
-                    >
-                      {st.gender}
-                    </span>
+                {/* Biểu tượng cảnh báo ở góc trên bên phải (Chuẩn Ảnh 1) */}
+                {hasIssue && (
+                  <div
+                    className="absolute top-2.5 right-2.5 w-5 h-5 rounded-md bg-red-600 text-white flex items-center justify-center shadow-2xs z-10"
+                    title={`Cần chú ý: có ${stats.violations} lần vi phạm hoặc vắng/muộn`}
+                  >
+                    <AlertTriangle className="w-3 h-3 fill-white stroke-red-600" />
                   </div>
+                )}
 
-                  {/* Student Details */}
-                  <div className="mt-3.5 space-y-1.5 text-xs text-slate-600">
-                    <div className="flex items-center justify-between text-slate-500">
-                      <span className="text-[11px]">Ngày sinh:</span>
-                      <span className="font-mono font-semibold text-slate-700 tabular-nums">{st.dob}</span>
-                    </div>
-
-                    {st.phone && (
-                      <div className="flex items-center justify-between text-slate-500">
-                        <span className="text-[11px]">Điện thoại:</span>
-                        <span className="font-mono text-slate-700">{st.phone}</span>
-                      </div>
-                    )}
-
-                    {/* Attendance status badge */}
-                    <div className="flex items-center justify-between pt-1">
-                      <span className="text-[11px] text-slate-400">Điểm danh:</span>
-                      {todayStatus === 'present' ? (
-                        <span className="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200/60 text-[10px] font-bold">
-                          Có mặt
-                        </span>
-                      ) : todayStatus === 'late' ? (
-                        <span className="px-2 py-0.5 rounded-md bg-amber-50 text-amber-700 border border-amber-200/60 text-[10px] font-bold">
-                          Đi học muộn
-                        </span>
-                      ) : todayStatus === 'excused_absence' ? (
-                        <span className="px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 border border-purple-200/60 text-[10px] font-bold">
-                          Nghỉ có phép
-                        </span>
-                      ) : todayStatus === 'unexcused_absence' ? (
-                        <span className="px-2 py-0.5 rounded-md bg-rose-50 text-rose-700 border border-rose-200/60 text-[10px] font-bold">
-                          Vắng không phép
-                        </span>
-                      ) : (
-                        <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-500 text-[10px] font-medium">
-                          Chưa ĐD
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Conduct stats pills */}
-                    <div className="flex items-center justify-between pt-1">
-                      <span className="text-[11px] text-slate-400">Thi đua:</span>
-                      <div className="flex items-center gap-1.5">
-                        {stats.violations > 0 ? (
-                          <span className="px-2 py-0.5 rounded-md bg-rose-50 text-rose-700 border border-rose-100 text-[10px] font-bold">
-                            Vi phạm: {stats.violations}
-                          </span>
-                        ) : (
-                          <span className="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-100 text-[10px] font-bold">
-                            Tốt ({stats.score}đ)
-                          </span>
-                        )}
-                        {stats.merits > 0 && (
-                          <span className="px-2 py-0.5 rounded-md bg-amber-50 text-amber-700 border border-amber-100 text-[10px] font-bold">
-                            +{stats.merits}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
+                {/* Avatar vuông bo tròn (Chuẩn Ảnh 1) */}
+                <div className="w-13 h-13 sm:w-14 sm:h-14 rounded-2xl bg-blue-50/80 border border-blue-100 text-blue-600 flex items-center justify-center font-black text-xl mb-2 shadow-2xs group-hover:scale-105 transition-transform shrink-0">
+                  {getInitial(st.name)}
                 </div>
 
-                {/* Card Footer: Action Buttons */}
-                <div className="mt-4 pt-3 border-t border-rose-50 flex items-center justify-between gap-2">
-                  <button
-                    onClick={() => onOpenProfile(st.id)}
-                    className="flex-1 py-1.5 px-3 rounded-xl bg-rose-50 hover:bg-rose-100/80 text-[#C94C67] text-xs font-bold transition-colors flex items-center justify-center gap-1"
-                  >
-                    <Eye className="w-3.5 h-3.5" />
-                    <span>Xem hồ sơ</span>
-                  </button>
+                {/* Họ và tên in đậm, căn giữa, tối đa 2 dòng */}
+                <h4 className="font-extrabold text-xs sm:text-[13px] text-slate-900 group-hover:text-[#C94C67] transition-colors uppercase tracking-tight text-center line-clamp-2 min-h-[2.1rem] leading-tight px-1 flex items-center justify-center">
+                  {st.name}
+                </h4>
 
-                  {isTeacher && (
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => handleResetPasswordClick(st)}
-                        className="p-1.5 rounded-xl text-slate-400 hover:text-amber-700 hover:bg-amber-50 transition-colors"
-                        title="Đặt lại mật khẩu mặc định (MSDDMMYYYY)"
-                      >
-                        <KeyRound className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={() => handleOpenEdit(st)}
-                        className="p-1.5 rounded-xl text-slate-400 hover:text-blue-700 hover:bg-blue-50 transition-colors"
-                        title="Chỉnh sửa thông tin học sinh"
-                      >
-                        <Edit2 className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={() => {
-                          if (confirm(`Bạn chắc chắn muốn xóa học sinh "${st.name}" (${st.code})? Dữ liệu liên quan sẽ bị xóa.`)) {
-                            onDeleteStudent(st.id);
-                          }
-                        }}
-                        className="p-1.5 rounded-xl text-slate-400 hover:text-red-700 hover:bg-red-50 transition-colors"
-                        title="Xóa học sinh này"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  )}
+                {/* Giới tính và ngày sinh trên cùng một dòng */}
+                <div className="text-[11px] font-medium mt-1 flex items-center justify-center gap-1.5 shrink-0">
+                  <span className={isFemale ? 'text-[#E06D85] font-semibold' : 'text-blue-600 font-semibold'}>
+                    {st.gender}
+                  </span>
+                  <span className="text-slate-300">•</span>
+                  <span className="text-slate-500 font-mono text-[11px] tabular-nums">
+                    {st.dob}
+                  </span>
+                </div>
+
+                {/* Hàng đáy: Trạng thái điểm danh (trái) & Tổng điểm thi đua / Cảnh báo (phải) */}
+                <div className="mt-2.5 pt-2 w-full flex items-center justify-between text-[11px] border-t border-rose-50/80 shrink-0">
+                  {/* Trạng thái điểm danh hôm nay */}
+                  <span className="text-left">
+                    {todayStatus === 'present' ? (
+                      <span className="text-emerald-700 font-semibold">Có mặt</span>
+                    ) : todayStatus === 'late' ? (
+                      <span className="text-amber-700 font-semibold">Muộn</span>
+                    ) : todayStatus === 'excused_absence' ? (
+                      <span className="text-blue-600 font-semibold">Có phép</span>
+                    ) : todayStatus === 'unexcused_absence' ? (
+                      <span className="text-rose-600 font-bold">Vắng KP</span>
+                    ) : (
+                      <span className="text-slate-400 font-normal">Chưa ĐD</span>
+                    )}
+                  </span>
+
+                  {/* Điểm thi đua hoặc số vi phạm (Chuẩn Ảnh 1) */}
+                  <span className="text-right">
+                    {stats.violations > 0 ? (
+                      <span className="text-rose-600 font-extrabold flex items-center gap-0.5">
+                        <AlertTriangle className="w-3 h-3 text-rose-500 fill-rose-500" />
+                        <span>{stats.violations}</span>
+                      </span>
+                    ) : (
+                      <span className="text-emerald-700 font-bold">
+                        {stats.score}đ
+                      </span>
+                    )}
+                  </span>
                 </div>
               </div>
             );
