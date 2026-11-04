@@ -41,13 +41,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onLogout,
   onChangePassword
 }) => {
-  const [supabaseConnected, setSupabaseConnected] = useState<boolean>(true);
+  const [supabaseConnected, setSupabaseConnected] = useState<boolean>(false);
 
   // Ping Supabase status periodically
   useEffect(() => {
     supabaseApi.getStatus()
       .then(res => {
-        if (res.isConfigured) {
+        if (res.isConfigured && res.durableRosterReady) {
           setSupabaseConnected(true);
         }
       })
@@ -107,7 +107,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           >
             <div className="flex items-center gap-1.5 truncate">
               <Cloud className={`w-3.5 h-3.5 ${supabaseConnected ? 'text-emerald-600' : 'text-rose-500'}`} />
-              <span className="truncate">Supabase: {supabaseConnected ? 'Đã kết nối' : 'Chưa kết nối'}</span>
+              <span className="truncate">Supabase: {supabaseConnected ? 'Đã cấu hình máy chủ' : 'Chưa sẵn sàng'}</span>
             </div>
             <span
               className={`w-2 h-2 rounded-full shrink-0 ${

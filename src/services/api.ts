@@ -38,30 +38,36 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     'Content-Type': 'application/json',
     ...(options.headers as Record<string, string> || {})
   };
+  if (cachedToken) headers['Authorization'] = `Bearer ${cachedToken}`;
 
-  if (cachedToken) {
-    headers['Authorization'] = `Bearer ${cachedToken}`;
+  let response: Response;
+  try {
+    response = await fetch(path, { ...options, headers });
+  } catch {
+    throw new Error('Không kết nối được máy chủ API. Hãy kiểm tra Preview hoặc bản triển khai.');
   }
 
-  const response = await fetch(path, {
-    ...options,
-    headers
-  });
-
+  const contentType = response.headers.get('content-type') || '';
+  const body = await response.text();
+  // Google AI Studio can return an HTML "Starting Server..." placeholder with
+  // HTTP 200. Never attempt JSON.parse on that document.
+  const looksHtml = /^\s*(?:<!doctype\s+html|<html\b)/i.test(body);
+  if (looksHtml || (!contentType.includes('json') && body.trim().startsWith('<'))) {
+    throw new Error(
+      'Máy chủ API chưa sẵn sàng hoặc đường dẫn API không đúng (nhận HTML thay vì JSON). ' +
+      'Kiểm tra /api/health trên môi trường đang mở; chưa phải lỗi mật khẩu hay mất dữ liệu Supabase.'
+    );
+  }
+  let data: any;
+  try {
+    data = JSON.parse(body);
+  } catch {
+    throw new Error(`API trả dữ liệu không hợp lệ (HTTP ${response.status}). Kiểm tra /api/health.`);
+  }
   if (!response.ok) {
-    let errorMsg = `Lỗi hệ thống (${response.status})`;
-    try {
-      const data = await response.json();
-      if (data && data.error) {
-        errorMsg = data.error;
-      }
-    } catch {
-      // fallback
-    }
-    throw new Error(errorMsg);
+    throw new Error(data?.error || `Lỗi máy chủ API (HTTP ${response.status})`);
   }
-
-  return response.json() as Promise<T>;
+  return data as T;
 }
 
 // Authentication
@@ -292,6 +298,7 @@ export const supabaseApi = {
   getStatus: () => request<{
     projectName: string;
     isConfigured: boolean;
+    durableRosterReady?: boolean;
     url: string;
     hasKey: boolean;
   }>('/api/supabase/status'),

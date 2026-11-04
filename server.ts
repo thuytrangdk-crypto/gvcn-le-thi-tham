@@ -2,6 +2,7 @@ import express from 'express';
 import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
@@ -21,6 +22,9 @@ const DB_FILE = path.join(DATA_DIR, 'db.json');
 
 // Supabase configuration for project thuy-trang
 const SUPABASE_PROJECT_NAME = 'thuy-trang';
+// Stable website identity; display class/year may change independently.
+const WEBSITE_SCOPE = 'gvcn-le-thi-tham';
+const WEBSITE_DB_CLASS = 'gvcn-le-thi-tham';
 const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '';
 const supabaseKey = process.env.VITE_SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY || '';
 
@@ -30,9 +34,13 @@ const isSupabaseConfigured = Boolean(
   supabaseKey
 );
 
-const supabaseServer: SupabaseClient | null = isSupabaseConfigured
-  ? createClient(supabaseUrl, supabaseKey)
+// The public/anon key cannot bypass Supabase RLS. A server-only key is required
+// for the application's own signed teacher session and transactional roster RPC.
+const supabaseServerKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY || '';
+const supabaseServer: SupabaseClient | null = isSupabaseConfigured && supabaseServerKey
+  ? createClient(supabaseUrl, supabaseServerKey, { auth: { persistSession: false, autoRefreshToken: false } })
   : null;
+
 
 // Middleware for parsing JSON requests
 app.use(express.json({ limit: '10mb' }));
@@ -101,7 +109,8 @@ function formatDobToPasswordSuffix(dob: string): string {
 }
 
 // Token store for session verification (supports both in-memory and HMAC signed stateless tokens for Vercel Serverless)
-const SESSION_SECRET = process.env.SESSION_SECRET || process.env.VITE_SUPABASE_PUBLISHABLE_KEY || 'gvcn-secret-salt-2026';
+const SESSION_SECRET = process.env.SESSION_SECRET || (isServerless ? '' : 'local-development-only-change-me');
+if (isServerless && !SESSION_SECRET) console.error('SESSION_SECRET must be set for production deployments');
 const sessions = new Map<string, { userId: string; role: 'teacher' | 'student'; username: string; name: string; studentId?: string; expiresAt: number }>();
 
 function generateToken(payload: { userId: string; role: 'teacher' | 'student'; username: string; name: string; studentId?: string }): string {
@@ -142,60 +151,12 @@ function verifyToken(token: string): { userId: string; role: 'teacher' | 'studen
   return null;
 }
 
-// Initial Mock Seed Data
+// Empty initial application state: never seed student demo data
 function getInitialData() {
   const teacherCreds = hashPassword('Gvcn@2026');
 
-  const initialStudentsRaw = [
-    { code: 'HS01', name: 'Nguyễn Văn An', gender: 'Nam', dob: '12/03/2009', phone: '0912345601', address: '12 Đường Lê Lợi, P. Bến Nghé, Q.1' },
-    { code: 'HS02', name: 'Trần Thị Bích Ngọc', gender: 'Nữ', dob: '05/07/2009', phone: '0912345602', address: '45 Đường Nguyễn Huệ, P. Bến Nghé, Q.1' },
-    { code: 'HS03', name: 'Lê Hoàng Cường', gender: 'Nam', dob: '22/01/2009', phone: '0912345603', address: '88 Đường Pasteur, P. Võ Thị Sáu, Q.3' },
-    { code: 'HS04', name: 'Phạm Thu Dung', gender: 'Nữ', dob: '18/09/2009', phone: '0912345604', address: '102 Đường Hai Bà Trưng, P. Tân Định, Q.1' },
-    { code: 'HS05', name: 'Vũ Đức Duy', gender: 'Nam', dob: '30/11/2009', phone: '0912345605', address: '15 Điện Biên Phủ, P. Đa Kao, Q.1' },
-    { code: 'HS06', name: 'Đỗ Thảo Hương', gender: 'Nữ', dob: '14/04/2009', phone: '0912345606', address: '27 CMT8, P. Bến Thành, Q.1' },
-    { code: 'HS07', name: 'Hoàng Minh Khôi', gender: 'Nam', dob: '08/08/2009', phone: '0912345607', address: '63 Nam Kỳ Khởi Nghĩa, Q.1' },
-    { code: 'HS08', name: 'Bùi Lan Anh', gender: 'Nữ', dob: '25/02/2009', phone: '0912345608', address: '19 Nguyễn Thị Minh Khai, Q.1' },
-    { code: 'HS09', name: 'Đặng Tuấn Kiệt', gender: 'Nam', dob: '11/12/2009', phone: '0912345609', address: '50 Đinh Tiên Hoàng, Q.1' },
-    { code: 'HS10', name: 'Ngô Mỹ Linh', gender: 'Nữ', dob: '03/06/2009', phone: '0912345610', address: '78 Võ Văn Tần, Q.3' },
-    { code: 'HS11', name: 'Phan Quốc Long', gender: 'Nam', dob: '19/10/2009', phone: '0912345611', address: '33 Trần Hưng Đạo, Q.5' },
-    { code: 'HS12', name: 'Dương Khánh Mai', gender: 'Nữ', dob: '28/05/2009', phone: '0912345612', address: '42 Nguyễn Trãi, Q.5' },
-    { code: 'HS13', name: 'Lý Trọng Nhân', gender: 'Nam', dob: '17/04/2009', phone: '0912345613', address: '111 An Dương Vương, Q.5' },
-    { code: 'HS14', name: 'Mai Trúc Phương', gender: 'Nữ', dob: '09/01/2009', phone: '0912345614', address: '85 Hùng Vương, Q.5' },
-    { code: 'HS15', name: 'Hồ Bảo Quân', gender: 'Nam', dob: '21/07/2009', phone: '0912345615', address: '96 Lý Thường Kiệt, Q.10' },
-    { code: 'HS16', name: 'Võ Thanh Tâm', gender: 'Nữ', dob: '13/03/2009', phone: '0912345616', address: '14 Sư Vạn Hạnh, Q.10' },
-    { code: 'HS17', name: 'Đinh Tiến Thắng', gender: 'Nam', dob: '02/11/2009', phone: '0912345617', address: '58 Ba Tháng Hai, Q.10' },
-    { code: 'HS18', name: 'Trịnh Kiều Trang', gender: 'Nữ', dob: '26/08/2009', phone: '0912345618', address: '22 Tô Hiến Thành, Q.10' },
-    { code: 'HS19', name: 'Lâm Tuấn Tú', gender: 'Nam', dob: '07/05/2009', phone: '0912345619', address: '39 Cách Mạng Tháng 8, Q.3' },
-    { code: 'HS20', name: 'Đoàn Yến Vy', gender: 'Nữ', dob: '16/09/2009', phone: '0912345620', address: '71 Nguyễn Thông, Q.3' },
-    { code: 'HS21', name: 'Chu Bảo Nam', gender: 'Nam', dob: '29/04/2009', phone: '0912345621', address: '104 Lê Văn Sỹ, Q.3' },
-    { code: 'HS22', name: 'Tạ Minh Châu', gender: 'Nữ', dob: '04/10/2009', phone: '0912345622', address: '18 Kỳ Đồng, Q.3' },
-    { code: 'HS23', name: 'Quách Hữu Phước', gender: 'Nam', dob: '10/02/2009', phone: '0912345623', address: '62 Hoàng Sa, Q.1' },
-    { code: 'HS24', name: 'Lương Nhã Uyên', gender: 'Nữ', dob: '23/12/2009', phone: '0912345624', address: '83 Trường Sa, Q. Bình Thạnh' },
-    { code: 'HS25', name: 'Diệp Quang Vinh', gender: 'Nam', dob: '15/06/2009', phone: '0912345625', address: '29 Phan Đăng Lưu, Q. Bình Thạnh' },
-    { code: 'HS26', name: 'Kim Hồng Phúc', gender: 'Nam', dob: '01/08/2009', phone: '0912345626', address: '46 Bạch Đằng, Q. Bình Thạnh' },
-    { code: 'HS27', name: 'Vương Bảo Ngọc', gender: 'Nữ', dob: '19/05/2009', phone: '0912345627', address: '55 Nơ Trang Long, Q. Bình Thạnh' },
-    { code: 'HS28', name: 'Thạch Hải Đăng', gender: 'Nam', dob: '24/09/2009', phone: '0912345628', address: '37 Ung Văn Khiêm, Q. Bình Thạnh' },
-    { code: 'HS29', name: 'Châu Cẩm Tú', gender: 'Nữ', dob: '06/03/2009', phone: '0912345629', address: '12 Xô Viết Nghệ Tĩnh, Q. Bình Thạnh' },
-    { code: 'HS30', name: 'La Chí Kiên', gender: 'Nam', dob: '31/07/2009', phone: '0912345630', address: '98 D2, Q. Bình Thạnh' }
-  ];
-
-  const students = initialStudentsRaw.map((s) => {
-    const rawDefaultPass = `${s.code}${formatDobToPasswordSuffix(s.dob)}`;
-    const cred = hashPassword(rawDefaultPass);
-    return {
-      id: s.code,
-      code: s.code,
-      name: s.name,
-      gender: s.gender as 'Nam' | 'Nữ',
-      dob: s.dob,
-      phone: s.phone,
-      address: s.address,
-      passwordHash: cred.hash,
-      passwordSalt: cred.salt,
-      customPasswordSet: false,
-      createdAt: new Date().toISOString()
-    };
-  });
+  // There are no built-in students. The roster is loaded from Supabase.
+  const students: any[] = [];
 
   // 56 Seats (4 rows/dãy x 7 desks/bàn x 2 positions L/R)
   const seats: Array<{ seatCode: string; row: number; desk: number; position: 'L' | 'R'; studentId: string | null }> = [];
@@ -340,17 +301,18 @@ function getInitialData() {
       passwordHash: teacherCreds.hash,
       passwordSalt: teacherCreds.salt
     },
-    students,
+    // Do not seed 30 demonstration students in real classrooms.
+    students: [],
     seating: {
-      seats,
+      seats: [],
       updatedAt: new Date().toISOString()
     },
-    announcements: initialAnnouncements,
-    honors: initialHonors,
+    announcements: [],
+    honors: [],
     conductRules,
-    conductLogs: initialConductLogs,
-    attendance: initialAttendance,
-    grades: initialGrades,
+    conductLogs: [],
+    attendance: [],
+    grades: [],
     periodEvaluations: {},
     settings: {
       appName: 'GVCN – Lê Thị Thắm',
@@ -435,31 +397,112 @@ function loadDb(): any {
 
 // Atomic Save DB (handles serverless writable /tmp and mirrors to root data/db.json)
 function saveDb(data: any): void {
-  memoryDb = data;
-
-  try {
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
-    }
-    const tmpFile = path.join(DATA_DIR, `db.tmp.${Date.now()}`);
-    fs.writeFileSync(tmpFile, JSON.stringify(data, null, 2), 'utf-8');
-    fs.renameSync(tmpFile, DB_FILE);
-  } catch (err) {
-    console.warn('Warning: Could not save DB to disk in current runtime:', err);
+  if (supabaseServer) {
+    const context = writeContext.getStore();
+    if (!context) throw new Error('Thiếu ngữ cảnh lưu dữ liệu');
+    context.pending.push(commitWebsiteState(data));
+    return;
   }
-
-  // Also mirror save to data/db.json for persistence in container/local filesystem
+  // Local development only. Production refuses writes without Supabase.
+  if (isServerless) throw new Error('Máy chủ chưa có Supabase');
+  memoryDb = data;
   try {
-    const localDataDir = path.join(__dirname, 'data');
-    if (!fs.existsSync(localDataDir)) {
-      fs.mkdirSync(localDataDir, { recursive: true });
-    }
-    const localDbPath = path.join(localDataDir, 'db.json');
-    if (path.resolve(localDbPath) !== path.resolve(DB_FILE)) {
-      fs.writeFileSync(localDbPath, JSON.stringify(data, null, 2), 'utf-8');
-    }
-  } catch {}
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), 'utf8');
+  } catch (e) { console.warn('Không thể lưu file phát triển:', e); }
 }
+
+// Each website has a stable, server-only state record. The display class can change.
+// This table is independent of gvcn_v2_state, which belongs to another website.
+async function refreshRosterFromSupabase(): Promise<void> {
+  if (!supabaseServer) throw new Error('Thiếu cấu hình Supabase trên máy chủ');
+  const {data, error} = await supabaseServer.from('gvcn_teacher_app_state')
+    .select('app_state, version').eq('scope', WEBSITE_SCOPE).maybeSingle();
+  if (error) throw new Error(`Không đọc được trạng thái website từ Supabase: ${error.message}`);
+  if (!data) {
+    memoryDb = {...getInitialData(), _version: 0};
+    return;
+  }
+  const saved: any = data.app_state;
+  if (!saved || !Array.isArray(saved.students) || !saved.settings || !saved.teacher) {
+    throw new Error('Dữ liệu Supabase không hợp lệ; không được khôi phục danh sách mẫu');
+  }
+  memoryDb = {...saved, _version: Number(data.version)};
+}
+
+async function commitWebsiteState(db: any): Promise<number> {
+  if (!supabaseServer) throw new Error('Thiếu SUPABASE_SERVICE_ROLE_KEY ở máy chủ');
+  const payload = JSON.parse(JSON.stringify(db));
+  const expectedVersion = Number(payload._version || 0);
+  delete payload._version;
+  const {data, error} = await supabaseServer.rpc('gvcn_tham_save_state', {
+    p_scope: WEBSITE_SCOPE,
+    p_state: payload,
+    p_expected_version: expectedVersion
+  });
+  if (error) throw new Error(`Supabase không lưu được dữ liệu: ${error.message}`);
+  if (!data || !Number.isInteger(Number(data.version)) || Number(data.count) !== payload.students.length) {
+    throw new Error('Supabase trả về kết quả ghi dữ liệu không hợp lệ');
+  }
+  db._version = Number(data.version);
+  memoryDb = db;
+  return Number(data.count);
+}
+
+// Student roster operations use the same atomic database commit as all other edits.
+async function persistRosterTransaction(db: any, _mode: 'replace' | 'append' | 'clean' | 'reconcile'): Promise<number> {
+  return commitWebsiteState(db);
+}
+
+// Ensure other screens (attendance, grades, seating, settings) also persist.
+// Wait for the server database write before returning an HTTP success response.
+const writeContext = new AsyncLocalStorage<{pending: Promise<unknown>[]}>();
+app.use((req: any, res: any, next: any) => {
+  writeContext.run({pending: []}, () => {
+    const originalJson = res.json.bind(res);
+    res.json = (result: any) => {
+      const operations = writeContext.getStore()?.pending || [];
+      if (!operations.length) return originalJson(result);
+      Promise.all(operations).then(() => originalJson(result)).catch((error: any) => {
+        if (!res.headersSent) {
+          res.status(503);
+          originalJson({error: `Không thể lưu Supabase; không có thay đổi nào được xác nhận: ${error.message}`});
+        }
+      });
+      return res;
+    };
+    next();
+  });
+});
+
+// Diagnostic endpoint (no credentials, students, keys or private configuration exposed).
+// Placed before the Supabase session middleware so preview/deployment health can be
+// distinguished from an HTML 'Starting Server' placeholder.
+app.get('/api/health', (_req: any, res: any) => {
+  res.setHeader('Cache-Control', 'no-store');
+  return res.status(200).json({
+    ok: true,
+    service: 'gvcn-le-thi-tham',
+    databaseReady: Boolean(supabaseServer),
+    sessionConfigured: Boolean(SESSION_SECRET),
+    environment: isServerless ? 'serverless' : 'node',
+  });
+});
+
+// This middleware covers both the signed-in student APIs and the login flow.
+// It must run before the route declarations (including /api/auth/login).
+app.use('/api', async (req: any, res: any, next: any) => {
+  if (!isServerless && !isSupabaseConfigured) return next();
+  if (!supabaseServer || (isServerless && !SESSION_SECRET)) {
+    return res.status(503).json({ error: 'Máy chủ chưa được cấu hình an toàn: cần SESSION_SECRET và SUPABASE_SERVICE_ROLE_KEY trên Vercel.' });
+  }
+  try {
+    await refreshRosterFromSupabase();
+    next();
+  } catch (e: any) {
+    return res.status(503).json({ error: `Không thể truy cập dữ liệu học sinh an toàn: ${e.message}` });
+  }
+});
 
 // Authentication Middleware (supports stateless signed tokens across Vercel function instances)
 function authMiddleware(req: any, res: any, next: any) {
@@ -601,7 +644,7 @@ app.post('/api/auth/login', (req: any, res: any) => {
 });
 
 // 3. Change Password
-app.post('/api/auth/change-password', authMiddleware, (req: any, res: any) => {
+app.post('/api/auth/change-password', authMiddleware, async (req: any, res: any) => {
   const { currentPassword, newPassword } = req.body;
   if (!currentPassword || !newPassword) {
     return res.status(400).json({ error: 'Vui lòng cung cấp mật khẩu hiện tại và mật khẩu mới' });
@@ -618,7 +661,10 @@ app.post('/api/auth/change-password', authMiddleware, (req: any, res: any) => {
     const newCred = hashPassword(newPassword);
     db.teacher.passwordHash = newCred.hash;
     db.teacher.passwordSalt = newCred.salt;
-    saveDb(db);
+    try {
+      if (isServerless || isSupabaseConfigured) await persistRosterTransaction(db, 'append');
+      else saveDb(db);
+    } catch (e: any) { return res.status(500).json({ error: e.message }); }
     return res.json({ success: true, message: 'Đổi mật khẩu giáo viên thành công' });
   } else {
     const student = db.students.find((s: any) => s.id === req.user.studentId);
@@ -633,13 +679,16 @@ app.post('/api/auth/change-password', authMiddleware, (req: any, res: any) => {
     student.passwordHash = newCred.hash;
     student.passwordSalt = newCred.salt;
     student.customPasswordSet = true;
-    saveDb(db);
+    try {
+      if (isServerless || isSupabaseConfigured) await persistRosterTransaction(db, 'append');
+      else saveDb(db);
+    } catch (e: any) { return res.status(500).json({ error: e.message }); }
     return res.json({ success: true, message: 'Đổi mật khẩu học sinh thành công' });
   }
 });
 
 // 4. Reset Student Password (Teacher only)
-app.post('/api/auth/reset-student-password', authMiddleware, requireTeacher, (req: any, res: any) => {
+app.post('/api/auth/reset-student-password', authMiddleware, requireTeacher, async (req: any, res: any) => {
   const { studentId } = req.body;
   const db = loadDb();
   const student = db.students.find((s: any) => s.id === studentId || s.code === studentId);
@@ -651,7 +700,10 @@ app.post('/api/auth/reset-student-password', authMiddleware, requireTeacher, (re
   student.passwordHash = cred.hash;
   student.passwordSalt = cred.salt;
   student.customPasswordSet = false;
-  saveDb(db);
+  try {
+    if (isServerless || isSupabaseConfigured) await persistRosterTransaction(db, 'append');
+    else saveDb(db);
+  } catch (e: any) { return res.status(500).json({ error: e.message }); }
   return res.json({
     success: true,
     message: `Đã đặt lại mật khẩu cho học sinh ${student.name} về mặc định (${defaultPass})`,
@@ -695,7 +747,7 @@ app.get('/api/students', authMiddleware, (req: any, res: any) => {
 });
 
 // 6. Create Student (Teacher only)
-app.post('/api/students', authMiddleware, requireTeacher, (req: any, res: any) => {
+app.post('/api/students', authMiddleware, requireTeacher, async (req: any, res: any) => {
   const { code, name, gender, dob, phone, address, parentName, parentPhone, notes } = req.body;
   if (!code || !name || !gender || !dob) {
     return res.status(400).json({ error: 'Vui lòng điền đầy đủ Mã học sinh, Họ tên, Giới tính, Ngày sinh' });
@@ -710,7 +762,7 @@ app.post('/api/students', authMiddleware, requireTeacher, (req: any, res: any) =
   const cred = hashPassword(defaultPass);
 
   const newStudent = {
-    id: cleanCode,
+    id: `${WEBSITE_SCOPE}:${crypto.randomUUID()}`,
     code: cleanCode,
     name: name.trim(),
     gender: gender === 'Nữ' ? 'Nữ' : 'Nam',
@@ -727,12 +779,17 @@ app.post('/api/students', authMiddleware, requireTeacher, (req: any, res: any) =
   };
 
   db.students.push(newStudent);
-  saveDb(db);
+  try {
+    if (isServerless || isSupabaseConfigured) await persistRosterTransaction(db, 'append');
+    else saveDb(db);
+  } catch (e: any) {
+    return res.status(500).json({ error: e.message });
+  }
   return res.json({ success: true, student: newStudent });
 });
 
 // 7. Update Student (Teacher only)
-app.put('/api/students/:id', authMiddleware, requireTeacher, (req: any, res: any) => {
+app.put('/api/students/:id', authMiddleware, requireTeacher, async (req: any, res: any) => {
   const { id } = req.params;
   const { name, gender, dob, phone, address, parentName, parentPhone, notes } = req.body;
   const db = loadDb();
@@ -754,7 +811,12 @@ app.put('/api/students/:id', authMiddleware, requireTeacher, (req: any, res: any
     notes: notes !== undefined ? notes.trim() : prev.notes
   };
 
-  saveDb(db);
+  try {
+    if (isServerless || isSupabaseConfigured) await persistRosterTransaction(db, 'append');
+    else saveDb(db);
+  } catch (e: any) {
+    return res.status(500).json({ error: e.message });
+  }
   return res.json({ success: true, student: db.students[index] });
 });
 
@@ -786,25 +848,11 @@ app.delete('/api/students/:id', authMiddleware, requireTeacher, async (req: any,
   db.grades = db.grades.filter((g: any) => g.studentId !== student.id);
   db.honors = db.honors.filter((h: any) => h.studentId !== student.id);
 
-  saveDb(db);
-
-  if (isSupabaseConfigured && supabaseServer) {
-    try {
-      await supabaseServer.from('students').delete().eq('class_id', activeClassId).eq('id', student.id);
-      await supabaseServer.from('gvcn_v2_state').upsert({
-        id: 'current_state',
-        class_id: activeClassId,
-        schema_version: '2.1.0',
-        school_year: db.settings?.schoolYear || '2025 - 2026',
-        app_state: {
-          ...db,
-          updatedAt: new Date().toISOString()
-        },
-        last_synced_at: new Date().toISOString()
-      }, { onConflict: 'class_id,id' });
-    } catch (e: any) {
-      console.warn('Xóa học sinh trên Supabase (warning):', e?.message || e);
-    }
+  try {
+    if (isServerless || isSupabaseConfigured) await persistRosterTransaction(db, 'reconcile');
+    else saveDb(db);
+  } catch (e: any) {
+    return res.status(500).json({ error: e.message });
   }
 
   return res.json({ success: true, message: `Đã xóa học sinh ${student.name}` });
@@ -813,6 +861,7 @@ app.delete('/api/students/:id', authMiddleware, requireTeacher, async (req: any,
 // 9. Bulk Import Students (Teacher only) - Supports Mode A (replace) and Mode B (append)
 app.post('/api/students/import', authMiddleware, requireTeacher, async (req: any, res: any) => {
   const { students: importList, mode = 'append' } = req.body;
+  if (!['append', 'replace'].includes(mode)) return res.status(400).json({error: 'Chế độ nhập không hợp lệ'});
   if (!Array.isArray(importList) || importList.length === 0) {
     return res.status(400).json({ error: 'Dữ liệu nhập trống hoặc không hợp lệ' });
   }
@@ -900,6 +949,10 @@ app.post('/api/students/import', authMiddleware, requireTeacher, async (req: any
         errorRows.push({ row: rowNum, code, reason: 'Họ và tên không được để trống' });
         return;
       }
+      if (!dob || !['nam', 'nữ'].includes(gender.toLowerCase())) {
+        errorRows.push({row: rowNum, code, name, reason: 'Ngày sinh hoặc giới tính không hợp lệ'});
+        return;
+      }
       if (existingCodes.has(code)) {
         errorRows.push({ row: rowNum, code, name, reason: `Mã học sinh "${code}" đã tồn tại trên hệ thống` });
         return;
@@ -909,7 +962,7 @@ app.post('/api/students/import', authMiddleware, requireTeacher, async (req: any
       const cred = hashPassword(defaultPass);
 
       const newStudent = {
-        id: code,
+        id: `${WEBSITE_SCOPE}:${crypto.randomUUID()}`,
         code,
         name,
         gender: gender.toLowerCase() === 'nữ' ? 'Nữ' : 'Nam',
@@ -930,53 +983,18 @@ app.post('/api/students/import', authMiddleware, requireTeacher, async (req: any
       successRows.push(newStudent);
     });
 
-    // Lưu vào bộ nhớ và file cục bộ
-    saveDb(db);
-
-    // Đồng bộ vào Supabase nếu được cấu hình
-    if (isSupabaseConfigured && supabaseServer) {
-      try {
-        if (mode === 'replace') {
-          await supabaseServer.from('period_evaluations').delete().eq('class_id', activeClassId);
-          await supabaseServer.from('conduct_logs').delete().eq('class_id', activeClassId);
-          await supabaseServer.from('grades').delete().eq('class_id', activeClassId);
-          await supabaseServer.from('attendance').delete().eq('class_id', activeClassId);
-          await supabaseServer.from('honors').delete().eq('class_id', activeClassId);
-          await supabaseServer.from('students').delete().eq('class_id', activeClassId);
-        }
-
-        const studentRows = successRows.map((s: any) => ({
-          id: s.id,
-          class_id: activeClassId,
-          code: s.code,
-          name: s.name,
-          gender: s.gender,
-          dob: s.dob,
-          phone: s.phone || '',
-          address: s.address || '',
-          parent_name: s.parentName || '',
-          parent_phone: s.parentPhone || '',
-          notes: s.notes || ''
-        }));
-
-        if (studentRows.length > 0) {
-          await supabaseServer.from('students').upsert(studentRows, { onConflict: 'class_id,code' });
-        }
-
-        await supabaseServer.from('gvcn_v2_state').upsert({
-          id: 'current_state',
-          class_id: activeClassId,
-          schema_version: '2.1.0',
-          school_year: db.settings?.schoolYear || '2025 - 2026',
-          app_state: {
-            ...db,
-            updatedAt: new Date().toISOString()
-          },
-          last_synced_at: new Date().toISOString()
-        }, { onConflict: 'class_id,id' });
-      } catch (e: any) {
-        console.warn('Đồng bộ Supabase khi import học sinh (warning):', e?.message || e);
-      }
+    // Replacement must never silently drop malformed Excel rows.
+    if (mode === 'replace' && errorRows.length) {
+      return res.status(422).json({
+        error: `File Excel có ${errorRows.length} dòng không hợp lệ; danh sách cũ được giữ nguyên.`,
+        totalProcessed: importList.length, successCount: 0,
+        errorCount: errorRows.length, errors: errorRows, imported: [], mode
+      });
+    }
+    if (isServerless || isSupabaseConfigured) {
+      await persistRosterTransaction(db, mode);
+    } else {
+      saveDb(db); // local-only development
     }
 
     return res.json({
@@ -989,9 +1007,8 @@ app.post('/api/students/import', authMiddleware, requireTeacher, async (req: any
     });
   } catch (err: any) {
     // Rollback lại trạng thái ban đầu nếu có lỗi hệ thống trong chế độ thay thế
-    if (mode === 'replace') {
-      saveDb(backupDbState);
-    }
+    // No remote changes are committed when PostgreSQL transaction fails.
+    memoryDb = backupDbState;
     return res.status(500).json({ error: `Lỗi xử lý import học sinh: ${err.message}` });
   }
 });
@@ -1023,40 +1040,12 @@ app.post('/api/students/clean-class', authMiddleware, requireTeacher, async (req
     });
   }
 
-  // Lưu lại cài đặt lớp, cấu hình trường và tài khoản giáo viên nguyên vẹn
-  saveDb(db);
-
-  // Đồng bộ xóa trên Supabase nếu đã kết nối
-  if (isSupabaseConfigured && supabaseServer) {
-    try {
-      await supabaseServer.from('period_evaluations').delete().eq('class_id', activeClassId);
-      await supabaseServer.from('conduct_logs').delete().eq('class_id', activeClassId);
-      await supabaseServer.from('grades').delete().eq('class_id', activeClassId);
-      await supabaseServer.from('attendance').delete().eq('class_id', activeClassId);
-      await supabaseServer.from('honors').delete().eq('class_id', activeClassId);
-      await supabaseServer.from('students').delete().eq('class_id', activeClassId);
-
-      await supabaseServer.from('seating_layout').upsert({
-        class_id: activeClassId,
-        id: 'main',
-        seats: [],
-        updated_at: new Date().toISOString()
-      }, { onConflict: 'class_id,id' });
-
-      await supabaseServer.from('gvcn_v2_state').upsert({
-        id: 'current_state',
-        class_id: activeClassId,
-        schema_version: '2.1.0',
-        school_year: db.settings?.schoolYear || '2025 - 2026',
-        app_state: {
-          ...db,
-          updatedAt: new Date().toISOString()
-        },
-        last_synced_at: new Date().toISOString()
-      }, { onConflict: 'class_id,id' });
-    } catch (e: any) {
-      console.warn('Xóa dữ liệu lớp trên Supabase (warning):', e?.message || e);
-    }
+  // Do not claim successful deletion before Supabase commits AND verifies.
+  try {
+    if (isServerless || isSupabaseConfigured) await persistRosterTransaction(db, 'clean');
+    else saveDb(db); // local development only
+  } catch (e: any) {
+    return res.status(500).json({ error: `Không thể làm sạch lớp: ${e.message}` });
   }
 
   return res.json({
@@ -1641,75 +1630,7 @@ app.put('/api/settings', authMiddleware, requireTeacher, async (req: any, res: a
   if (req.body.teacherName && db.teacher) {
     db.teacher.name = req.body.teacherName;
   }
-  saveDb(db);
-
-  // Tự động đồng bộ lên Supabase nếu đã có cấu hình kết nối
-  if (isSupabaseConfigured && supabaseServer) {
-    try {
-      const activeClassId = (db.settings.className || '7A1').trim();
-      await supabaseServer.from('class_settings').upsert({
-        class_id: activeClassId,
-        app_name: db.settings.appName,
-        school_name: db.settings.schoolName,
-        class_name: db.settings.className,
-        teacher_name: db.settings.teacherName,
-        school_year: db.settings.schoolYear,
-        base_conduct_score: db.settings.baseConductScore,
-        accent_color: db.settings.accentColor,
-        conduct_rules: db.settings.conductRules,
-        evaluation_tiers: db.settings.evaluationTiers,
-        subjects: db.settings.subjects,
-        updated_at: new Date().toISOString()
-      }, { onConflict: 'class_id' });
-
-      // Đảm bảo tạo phân công trong teacher_assignments trước khi cập nhật assigned_class_id
-      try {
-        const { data: teacherProfiles } = await supabaseServer.from('profiles').select('id').eq('role', 'teacher');
-        if (teacherProfiles && teacherProfiles.length > 0) {
-          for (const tp of teacherProfiles) {
-            await supabaseServer.from('teacher_assignments').upsert({
-              teacher_id: tp.id,
-              class_id: activeClassId,
-              school_year: db.settings.schoolYear || '2025 - 2026',
-              role: 'head_teacher',
-              is_active: true
-            }, { onConflict: 'teacher_id,class_id,school_year' });
-          }
-        }
-      } catch (e: any) {
-        console.warn('Cập nhật teacher_assignments ngầm:', e?.message || e);
-      }
-
-      // Cập nhật lớp phụ trách cho giáo viên trên Supabase để RLS lập tức có hiệu lực
-      await supabaseServer.from('profiles').update({
-        assigned_class_id: activeClassId,
-        name: db.settings.teacherName,
-        updated_at: new Date().toISOString()
-      }).eq('role', 'teacher');
-
-      // Đồng bộ snapshot trạng thái vào gvcn_v2_state
-      try {
-        await supabaseServer.from('gvcn_v2_state').upsert({
-          id: 'current_state',
-          class_id: activeClassId,
-          schema_version: '2.1.0',
-          school_year: db.settings.schoolYear || '2025 - 2026',
-          app_state: {
-            appName: db.settings.appName,
-            schoolName: db.settings.schoolName,
-            className: db.settings.className,
-            schoolYear: db.settings.schoolYear,
-            updatedAt: new Date().toISOString()
-          },
-          last_synced_at: new Date().toISOString()
-        }, { onConflict: 'class_id,id' });
-      } catch (e: any) {
-        console.warn('Cập nhật gvcn_v2_state ngầm:', e?.message || e);
-      }
-    } catch (e: any) {
-      console.warn('Lưu cấu hình lên Supabase ngầm (warning):', e?.message || e);
-    }
-  }
+  saveDb(db); // Only this website state; never update other teachers/profiles.
 
   return res.json(db.settings);
 });
@@ -1745,99 +1666,7 @@ app.post('/api/settings/reset-school-year', authMiddleware, requireTeacher, asyn
   db.settings.schoolName = updatedSchoolName;
   db.settings.schoolYear = updatedSchoolYear;
 
-  saveDb(db);
-
-  // If Supabase is configured, execute class reset on Supabase safely
-  if (isSupabaseConfigured && supabaseServer) {
-    try {
-      // 1. Delete class operational data
-      await supabaseServer.from('period_evaluations').delete().eq('class_id', oldClassId);
-      await supabaseServer.from('conduct_logs').delete().eq('class_id', oldClassId);
-      await supabaseServer.from('grades').delete().eq('class_id', oldClassId);
-      await supabaseServer.from('attendance').delete().eq('class_id', oldClassId);
-      await supabaseServer.from('honors').delete().eq('class_id', oldClassId);
-      await supabaseServer.from('announcements').delete().eq('class_id', oldClassId);
-      await supabaseServer.from('students').delete().eq('class_id', oldClassId);
-
-      // 2. Reset student accounts linked to this class back to pending/unassigned
-      await supabaseServer.from('profiles').update({
-        assigned_class_id: null,
-        student_id: null,
-        approval_status: 'pending',
-        updated_at: new Date().toISOString()
-      }).eq('assigned_class_id', oldClassId).eq('role', 'student');
-
-      // 3. Reset seating layout
-      await supabaseServer.from('seating_layout').upsert({
-        class_id: updatedClassName,
-        id: 'main',
-        seats: [],
-        updated_at: new Date().toISOString()
-      }, { onConflict: 'class_id,id' });
-
-      // 4. Update class_settings
-      await supabaseServer.from('class_settings').upsert({
-        class_id: updatedClassName,
-        app_name: db.settings.appName,
-        school_name: updatedSchoolName,
-        class_name: updatedClassName,
-        teacher_name: db.settings.teacherName,
-        school_year: updatedSchoolYear,
-        base_conduct_score: db.settings.baseConductScore,
-        accent_color: db.settings.accentColor,
-        conduct_rules: db.settings.conductRules,
-        evaluation_tiers: db.settings.evaluationTiers,
-        subjects: db.settings.subjects,
-        updated_at: new Date().toISOString()
-      }, { onConflict: 'class_id' });
-
-      // 5. Update teacher profile and teacher_assignments
-      try {
-        const { data: teacherProfiles } = await supabaseServer.from('profiles').select('id').eq('role', 'teacher');
-        if (teacherProfiles && teacherProfiles.length > 0) {
-          for (const tp of teacherProfiles) {
-            await supabaseServer.from('teacher_assignments').upsert({
-              teacher_id: tp.id,
-              class_id: updatedClassName,
-              school_year: updatedSchoolYear,
-              role: 'head_teacher',
-              is_active: true
-            }, { onConflict: 'teacher_id,class_id,school_year' });
-          }
-        }
-      } catch (e: any) {
-        console.warn('Sync teacher assignments for new year:', e?.message || e);
-      }
-
-      await supabaseServer.from('profiles').update({
-        assigned_class_id: updatedClassName,
-        updated_at: new Date().toISOString()
-      }).eq('role', 'teacher');
-
-      // 6. Update gvcn_v2_state
-      try {
-        await supabaseServer.from('gvcn_v2_state').upsert({
-          id: 'current_state',
-          class_id: updatedClassName,
-          schema_version: '2.1.0',
-          school_year: updatedSchoolYear,
-          app_state: {
-            action: 'reset_school_year',
-            appName: db.settings.appName,
-            className: updatedClassName,
-            schoolYear: updatedSchoolYear,
-            resetAt: new Date().toISOString()
-          },
-          last_synced_at: new Date().toISOString()
-        }, { onConflict: 'class_id,id' });
-      } catch (e: any) {
-        console.warn('Sync gvcn_v2_state for new year:', e?.message || e);
-      }
-
-    } catch (e: any) {
-      console.warn('Lỗi đồng bộ reset năm học lên Supabase:', e?.message || e);
-    }
-  }
+  saveDb(db); // One scoped commit; no DELETE on shared tables or teacher accounts.
 
   return res.json({
     success: true,
@@ -1875,7 +1704,9 @@ app.get('/api/supabase/status', authMiddleware, async (_req: any, res: any) => {
     projectName: SUPABASE_PROJECT_NAME,
     isConfigured: isSupabaseConfigured,
     url: supabaseUrl ? `${supabaseUrl.substring(0, 18)}...` : '',
-    hasKey: Boolean(supabaseKey)
+    hasKey: Boolean(supabaseKey),
+    durableRosterReady: Boolean(supabaseServer && SESSION_SECRET),
+    note: supabaseServer ? 'Đã cấu hình khóa máy chủ; cần kiểm tra bảng và RPC để xác nhận quyền ghi.' : 'Chưa cấu hình ghi dữ liệu Supabase phía máy chủ.'
   });
 });
 
@@ -1888,7 +1719,7 @@ app.post('/api/supabase/test', authMiddleware, requireTeacher, async (_req: any,
   }
 
   try {
-    const { data, error } = await supabaseServer.from('class_settings').select('id').limit(1);
+    const { data, error } = await supabaseServer.from('gvcn_teacher_app_state').select('scope').limit(1);
     if (error) {
       if (error.code === '42P01' || error.code === 'PGRST205' || (error.message && error.message.includes('schema cache'))) {
         return res.json({
@@ -1904,7 +1735,7 @@ app.post('/api/supabase/test', authMiddleware, requireTeacher, async (_req: any,
     }
     return res.json({
       success: true,
-      message: `Kết nối thành công đến project Supabase "${SUPABASE_PROJECT_NAME}"! Bảng dữ liệu đã sẵn sàng.`,
+      message: `Kết nối thành công đến project Supabase "${SUPABASE_PROJECT_NAME}"! Bảng lưu trạng thái website đã sẵn sàng.`,
       tablesCreated: true
     });
   } catch (err: any) {
@@ -1944,104 +1775,11 @@ app.get('/supabase/migration_single_school_year_reset.sql', (_req: any, res: any
 });
 
 app.post('/api/supabase/sync-up', authMiddleware, requireTeacher, async (_req: any, res: any) => {
-  if (!isSupabaseConfigured || !supabaseServer) {
-    return res.status(400).json({
-      error: 'Chưa cấu hình thông tin kết nối Supabase'
-    });
-  }
-
-  const db = loadDb();
-  const activeClassId = (db.settings.className || '7A1').trim();
-
   try {
-    await supabaseServer.from('class_settings').upsert({
-      class_id: activeClassId,
-      app_name: db.settings.appName,
-      school_name: db.settings.schoolName,
-      class_name: db.settings.className,
-      teacher_name: db.settings.teacherName,
-      school_year: db.settings.schoolYear,
-      base_conduct_score: db.settings.baseConductScore,
-      accent_color: db.settings.accentColor,
-      conduct_rules: db.settings.conductRules,
-      evaluation_tiers: db.settings.evaluationTiers,
-      subjects: db.settings.subjects,
-      updated_at: new Date().toISOString()
-    }, { onConflict: 'class_id' });
-
-    // Tạo/cập nhật quyền phân công trong teacher_assignments
-    try {
-      const { data: teacherProfiles } = await supabaseServer.from('profiles').select('id').eq('role', 'teacher');
-      if (teacherProfiles && teacherProfiles.length > 0) {
-        for (const tp of teacherProfiles) {
-          await supabaseServer.from('teacher_assignments').upsert({
-            teacher_id: tp.id,
-            class_id: activeClassId,
-            school_year: db.settings.schoolYear || '2025 - 2026',
-            role: 'head_teacher',
-            is_active: true
-          }, { onConflict: 'teacher_id,class_id,school_year' });
-        }
-      }
-    } catch (e: any) {
-      console.warn('Sync teacher_assignments:', e?.message || e);
-    }
-
-    // Cập nhật lớp phụ trách cho giáo viên trên Supabase
-    await supabaseServer.from('profiles').update({
-      assigned_class_id: activeClassId,
-      name: db.settings.teacherName,
-      updated_at: new Date().toISOString()
-    }).eq('role', 'teacher');
-
-    // Đồng bộ gvcn_v2_state
-    try {
-      await supabaseServer.from('gvcn_v2_state').upsert({
-        id: 'current_state',
-        class_id: activeClassId,
-        schema_version: '2.1.0',
-        school_year: db.settings.schoolYear || '2025 - 2026',
-        app_state: {
-          appName: db.settings.appName,
-          schoolName: db.settings.schoolName,
-          className: db.settings.className,
-          schoolYear: db.settings.schoolYear,
-          updatedAt: new Date().toISOString()
-        },
-        last_synced_at: new Date().toISOString()
-      }, { onConflict: 'class_id,id' });
-    } catch (e: any) {
-      console.warn('Sync gvcn_v2_state:', e?.message || e);
-    }
-
-    if (db.seating) {
-      await supabaseServer.from('seating_layout').upsert({
-        id: 'main',
-        class_id: activeClassId,
-        seats: db.seating.seats,
-        updated_at: new Date().toISOString()
-      }, { onConflict: 'class_id,id' });
-    }
-
-    if (Array.isArray(db.announcements) && db.announcements.length > 0) {
-      const annRows = db.announcements.map((a: any) => ({
-        id: a.id,
-        class_id: activeClassId,
-        title: a.title,
-        content: a.content,
-        author: a.author,
-        created_at: a.createdAt,
-        is_pinned: a.isPinned,
-        is_published: a.isPublished,
-        category: a.category,
-        attachment_name: a.attachmentName
-      }));
-      await supabaseServer.from('announcements').upsert(annRows, { onConflict: 'id' });
-    }
-
-    return res.json({ success: true, message: `Đã đồng bộ dữ liệu cài đặt, sơ đồ và bảng tin lớp ${activeClassId} lên Supabase thành công!` });
-  } catch (err: any) {
-    return res.status(500).json({ error: `Lỗi đồng bộ lên Supabase: ${err.message}` });
+    await commitWebsiteState(loadDb());
+    return res.json({success: true, message: 'Đã lưu trạng thái của website này vào Supabase.'});
+  } catch (e: any) {
+    return res.status(503).json({error: e.message});
   }
 });
 
@@ -2072,7 +1810,11 @@ async function startServer() {
 
 // Start standalone HTTP listener only when NOT running as a serverless function (e.g. Vercel)
 if (!process.env.VERCEL && !process.env.AWS_LAMBDA_FUNCTION_NAME) {
-  startServer();
+  startServer().catch((error: unknown) => {
+    // The hosting preview may otherwise keep returning its own HTML loading page.
+    console.error('[GVCN] Không khởi động được Express/Vite:', error);
+    process.exitCode = 1;
+  });
 }
 
 export { app };
