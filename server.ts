@@ -372,8 +372,15 @@ function getInitialData() {
   };
 }
 
+// Global in-memory cache to ensure state consistency across asynchronous requests
+let memoryDb: any = null;
+
 // Load DB with safe fallback for Vercel Serverless environment
 function loadDb(): any {
+  if (memoryDb) {
+    return memoryDb;
+  }
+
   let db: any = null;
   const localDbPath = path.join(__dirname, 'data', 'db.json');
 
@@ -422,11 +429,14 @@ function loadDb(): any {
     }
   } catch {}
 
+  memoryDb = db;
   return db;
 }
 
 // Atomic Save DB (handles serverless writable /tmp and mirrors to root data/db.json)
 function saveDb(data: any): void {
+  memoryDb = data;
+
   try {
     if (!fs.existsSync(DATA_DIR)) {
       fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -749,9 +759,10 @@ app.put('/api/students/:id', authMiddleware, requireTeacher, (req: any, res: any
 });
 
 // 8. Delete Student (Teacher only)
-app.delete('/api/students/:id', authMiddleware, requireTeacher, (req: any, res: any) => {
+app.delete('/api/students/:id', authMiddleware, requireTeacher, async (req: any, res: any) => {
   const { id } = req.params;
   const db = loadDb();
+  const activeClassId = (db.settings?.className || '7A1').trim();
   const student = db.students.find((s: any) => s.id === id || s.code === id);
   if (!student) {
     return res.status(404).json({ error: 'Không tìm thấy học sinh' });
@@ -776,103 +787,220 @@ app.delete('/api/students/:id', authMiddleware, requireTeacher, (req: any, res: 
   db.honors = db.honors.filter((h: any) => h.studentId !== student.id);
 
   saveDb(db);
+
+  if (isSupabaseConfigured && supabaseServer) {
+    try {
+      await supabaseServer.from('students').delete().eq('class_id', activeClassId).eq('id', student.id);
+      await supabaseServer.from('gvcn_v2_state').upsert({
+        id: 'current_state',
+        class_id: activeClassId,
+        schema_version: '2.1.0',
+        school_year: db.settings?.schoolYear || '2025 - 2026',
+        app_state: {
+          ...db,
+          updatedAt: new Date().toISOString()
+        },
+        last_synced_at: new Date().toISOString()
+      }, { onConflict: 'class_id,id' });
+    } catch (e: any) {
+      console.warn('Xóa học sinh trên Supabase (warning):', e?.message || e);
+    }
+  }
+
   return res.json({ success: true, message: `Đã xóa học sinh ${student.name}` });
 });
 
-// 9. Bulk Import Students (Teacher only)
 // 9. Bulk Import Students (Teacher only) - Supports Mode A (replace) and Mode B (append)
-app.post('/api/students/import', authMiddleware, requireTeacher, (req: any, res: any) => {
+app.post('/api/students/import', authMiddleware, requireTeacher, async (req: any, res: any) => {
   const { students: importList, mode = 'append' } = req.body;
   if (!Array.isArray(importList) || importList.length === 0) {
     return res.status(400).json({ error: 'Dữ liệu nhập trống hoặc không hợp lệ' });
   }
 
   const db = loadDb();
+  const activeClassId = (db.settings?.className || '7A1').trim();
 
-  // Mode A: Thay thế toàn bộ danh sách lớp
-  if (mode === 'replace') {
-    db.students = [];
-    db.attendance = [];
-    db.grades = [];
-    db.conductLogs = [];
-    db.honors = [];
-    db.periodEvaluations = {};
-    if (db.seating && Array.isArray(db.seating.seats)) {
-      db.seating.seats.forEach((seat: any) => {
-        seat.studentId = null;
-      });
-    }
-  }
-
-  const successRows: any[] = [];
-  const errorRows: { row: number; code?: string; name?: string; reason: string }[] = [];
-  const existingCodes = new Set(db.students.map((s: any) => s.code.toUpperCase()));
+  // 1. Kiểm tra tính hợp lệ và phát hiện mã trùng lặp ngay trong nội bộ file Excel
+  const fileCodesSeen = new Map<string, number>();
+  const fileDuplicateErrors: { row: number; code?: string; name?: string; reason: string }[] = [];
 
   importList.forEach((item: any, idx: number) => {
     const rowNum = idx + 1;
     const code = item.code ? String(item.code).trim().toUpperCase() : '';
-    const name = item.name ? String(item.name).trim() : '';
-    const gender = item.gender ? String(item.gender).trim() : 'Nam';
-    const dob = item.dob ? String(item.dob).trim() : '';
-    const phone = item.phone ? String(item.phone).trim() : '';
-    const address = item.address ? String(item.address).trim() : '';
-    const parentName = item.parentName ? String(item.parentName).trim() : '';
-    const parentPhone = item.parentPhone ? String(item.parentPhone).trim() : '';
-    const notes = item.notes ? String(item.notes).trim() : '';
-
-    if (!code) {
-      errorRows.push({ row: rowNum, name, reason: 'Mã học sinh không được để trống' });
-      return;
+    if (code) {
+      if (fileCodesSeen.has(code)) {
+        const firstRow = fileCodesSeen.get(code)!;
+        fileDuplicateErrors.push({
+          row: rowNum,
+          code,
+          name: item.name,
+          reason: `Mã học sinh "${code}" bị trùng lặp ngay trong file Excel (trùng với dòng ${firstRow})`
+        });
+      } else {
+        fileCodesSeen.set(code, rowNum);
+      }
     }
-    if (!name) {
-      errorRows.push({ row: rowNum, code, reason: 'Họ và tên không được để trống' });
-      return;
-    }
-    if (existingCodes.has(code)) {
-      errorRows.push({ row: rowNum, code, name, reason: `Mã học sinh "${code}" đã tồn tại` });
-      return;
-    }
-
-    const defaultPass = `${code}${formatDobToPasswordSuffix(dob)}`;
-    const cred = hashPassword(defaultPass);
-
-    const newStudent = {
-      id: code,
-      code,
-      name,
-      gender: gender.toLowerCase() === 'nữ' ? 'Nữ' : 'Nam',
-      dob: dob || '01/01/2009',
-      phone,
-      address,
-      parentName,
-      parentPhone,
-      notes,
-      passwordHash: cred.hash,
-      passwordSalt: cred.salt,
-      customPasswordSet: false,
-      createdAt: new Date().toISOString()
-    };
-
-    db.students.push(newStudent);
-    existingCodes.add(code);
-    successRows.push(newStudent);
   });
 
-  saveDb(db);
-  return res.json({
-    totalProcessed: importList.length,
-    successCount: successRows.length,
-    errorCount: errorRows.length,
-    errors: errorRows,
-    imported: successRows,
-    mode
-  });
+  // Nếu file Excel bị trùng mã nội bộ và chọn Chế độ A (thay thế toàn bộ):
+  // Hủy toàn bộ giao dịch để bảo đảm tính toàn vẹn dữ liệu, không xóa dữ liệu cũ!
+  if (mode === 'replace' && fileDuplicateErrors.length > 0) {
+    return res.json({
+      totalProcessed: importList.length,
+      successCount: 0,
+      errorCount: fileDuplicateErrors.length,
+      errors: fileDuplicateErrors,
+      imported: [],
+      mode
+    });
+  }
+
+  // Sao lưu trạng thái hiện tại để rollback nếu phát sinh lỗi bất ngờ
+  const backupDbState = JSON.parse(JSON.stringify(db));
+
+  try {
+    const successRows: any[] = [];
+    const errorRows: { row: number; code?: string; name?: string; reason: string }[] = [];
+
+    // Chế độ A: Thay thế toàn bộ danh sách lớp
+    // Xóa triệt để học sinh cũ và dữ liệu phụ thuộc của lớp này trước khi nạp mới
+    if (mode === 'replace') {
+      db.students = [];
+      db.attendance = [];
+      db.grades = [];
+      db.conductLogs = [];
+      db.honors = [];
+      db.periodEvaluations = {};
+      if (db.seating && Array.isArray(db.seating.seats)) {
+        db.seating.seats.forEach((seat: any) => {
+          seat.studentId = null;
+        });
+      }
+    }
+
+    const existingCodes = new Set(db.students.map((s: any) => s.code.toUpperCase()));
+
+    importList.forEach((item: any, idx: number) => {
+      const rowNum = idx + 1;
+      const code = item.code ? String(item.code).trim().toUpperCase() : '';
+      const name = item.name ? String(item.name).trim() : '';
+      const gender = item.gender ? String(item.gender).trim() : 'Nam';
+      const dob = item.dob ? String(item.dob).trim() : '';
+      const phone = item.phone ? String(item.phone).trim() : '';
+      const address = item.address ? String(item.address).trim() : '';
+      const parentName = item.parentName ? String(item.parentName).trim() : '';
+      const parentPhone = item.parentPhone ? String(item.parentPhone).trim() : '';
+      const notes = item.notes ? String(item.notes).trim() : '';
+
+      if (!code) {
+        errorRows.push({ row: rowNum, name, reason: 'Mã học sinh không được để trống' });
+        return;
+      }
+      if (!name) {
+        errorRows.push({ row: rowNum, code, reason: 'Họ và tên không được để trống' });
+        return;
+      }
+      if (existingCodes.has(code)) {
+        errorRows.push({ row: rowNum, code, name, reason: `Mã học sinh "${code}" đã tồn tại trên hệ thống` });
+        return;
+      }
+
+      const defaultPass = `${code}${formatDobToPasswordSuffix(dob)}`;
+      const cred = hashPassword(defaultPass);
+
+      const newStudent = {
+        id: code,
+        code,
+        name,
+        gender: gender.toLowerCase() === 'nữ' ? 'Nữ' : 'Nam',
+        dob: dob || '01/01/2009',
+        phone,
+        address,
+        parentName,
+        parentPhone,
+        notes,
+        passwordHash: cred.hash,
+        passwordSalt: cred.salt,
+        customPasswordSet: false,
+        createdAt: new Date().toISOString()
+      };
+
+      db.students.push(newStudent);
+      existingCodes.add(code);
+      successRows.push(newStudent);
+    });
+
+    // Lưu vào bộ nhớ và file cục bộ
+    saveDb(db);
+
+    // Đồng bộ vào Supabase nếu được cấu hình
+    if (isSupabaseConfigured && supabaseServer) {
+      try {
+        if (mode === 'replace') {
+          await supabaseServer.from('period_evaluations').delete().eq('class_id', activeClassId);
+          await supabaseServer.from('conduct_logs').delete().eq('class_id', activeClassId);
+          await supabaseServer.from('grades').delete().eq('class_id', activeClassId);
+          await supabaseServer.from('attendance').delete().eq('class_id', activeClassId);
+          await supabaseServer.from('honors').delete().eq('class_id', activeClassId);
+          await supabaseServer.from('students').delete().eq('class_id', activeClassId);
+        }
+
+        const studentRows = successRows.map((s: any) => ({
+          id: s.id,
+          class_id: activeClassId,
+          code: s.code,
+          name: s.name,
+          gender: s.gender,
+          dob: s.dob,
+          phone: s.phone || '',
+          address: s.address || '',
+          parent_name: s.parentName || '',
+          parent_phone: s.parentPhone || '',
+          notes: s.notes || ''
+        }));
+
+        if (studentRows.length > 0) {
+          await supabaseServer.from('students').upsert(studentRows, { onConflict: 'class_id,code' });
+        }
+
+        await supabaseServer.from('gvcn_v2_state').upsert({
+          id: 'current_state',
+          class_id: activeClassId,
+          schema_version: '2.1.0',
+          school_year: db.settings?.schoolYear || '2025 - 2026',
+          app_state: {
+            ...db,
+            updatedAt: new Date().toISOString()
+          },
+          last_synced_at: new Date().toISOString()
+        }, { onConflict: 'class_id,id' });
+      } catch (e: any) {
+        console.warn('Đồng bộ Supabase khi import học sinh (warning):', e?.message || e);
+      }
+    }
+
+    return res.json({
+      totalProcessed: importList.length,
+      successCount: successRows.length,
+      errorCount: errorRows.length,
+      errors: errorRows,
+      imported: successRows,
+      mode
+    });
+  } catch (err: any) {
+    // Rollback lại trạng thái ban đầu nếu có lỗi hệ thống trong chế độ thay thế
+    if (mode === 'replace') {
+      saveDb(backupDbState);
+    }
+    return res.status(500).json({ error: `Lỗi xử lý import học sinh: ${err.message}` });
+  }
 });
 
 // 9b. Làm sạch dữ liệu lớp (Teacher only - Safe class cleanup)
-app.post('/api/students/clean-class', authMiddleware, requireTeacher, (req: any, res: any) => {
+app.post('/api/students/clean-class', authMiddleware, requireTeacher, async (req: any, res: any) => {
   const { confirmText } = req.body;
-  if (!confirmText || confirmText.trim().toUpperCase() !== 'LAM SACH LOP') {
+  const normalized = confirmText ? String(confirmText).trim().replace(/\s+/g, ' ').toUpperCase() : '';
+  if (normalized !== 'LAM SACH LOP' && normalized !== 'LÀM SẠCH LỚP') {
     return res.status(400).json({
       error: 'Vui lòng nhập chính xác cụm từ "LAM SACH LOP" để xác nhận thực hiện thao tác làm sạch.'
     });
@@ -880,8 +1008,9 @@ app.post('/api/students/clean-class', authMiddleware, requireTeacher, (req: any,
 
   const db = loadDb();
   const studentCount = db.students.length;
+  const activeClassId = (db.settings?.className || '7A1').trim();
 
-  // Xóa danh sách học sinh và dữ liệu vận hành liên quan của lớp hiện tại
+  // Xóa danh sách học sinh và toàn bộ dữ liệu vận hành liên quan của lớp hiện tại
   db.students = [];
   db.attendance = [];
   db.grades = [];
@@ -896,6 +1025,39 @@ app.post('/api/students/clean-class', authMiddleware, requireTeacher, (req: any,
 
   // Lưu lại cài đặt lớp, cấu hình trường và tài khoản giáo viên nguyên vẹn
   saveDb(db);
+
+  // Đồng bộ xóa trên Supabase nếu đã kết nối
+  if (isSupabaseConfigured && supabaseServer) {
+    try {
+      await supabaseServer.from('period_evaluations').delete().eq('class_id', activeClassId);
+      await supabaseServer.from('conduct_logs').delete().eq('class_id', activeClassId);
+      await supabaseServer.from('grades').delete().eq('class_id', activeClassId);
+      await supabaseServer.from('attendance').delete().eq('class_id', activeClassId);
+      await supabaseServer.from('honors').delete().eq('class_id', activeClassId);
+      await supabaseServer.from('students').delete().eq('class_id', activeClassId);
+
+      await supabaseServer.from('seating_layout').upsert({
+        class_id: activeClassId,
+        id: 'main',
+        seats: [],
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'class_id,id' });
+
+      await supabaseServer.from('gvcn_v2_state').upsert({
+        id: 'current_state',
+        class_id: activeClassId,
+        schema_version: '2.1.0',
+        school_year: db.settings?.schoolYear || '2025 - 2026',
+        app_state: {
+          ...db,
+          updatedAt: new Date().toISOString()
+        },
+        last_synced_at: new Date().toISOString()
+      }, { onConflict: 'class_id,id' });
+    } catch (e: any) {
+      console.warn('Xóa dữ liệu lớp trên Supabase (warning):', e?.message || e);
+    }
+  }
 
   return res.json({
     success: true,

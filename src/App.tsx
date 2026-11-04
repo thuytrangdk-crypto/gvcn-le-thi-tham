@@ -219,11 +219,12 @@ export default function App() {
     }
   };
 
-  const handleImportStudents = async (studentList: Partial<Student>[]) => {
-    const res = await studentApi.import(studentList);
+  const handleImportStudents = async (studentList: Partial<Student>[], mode: 'append' | 'replace' = 'append') => {
+    const res = await studentApi.import(studentList, mode);
     await loadAllData();
     return res;
   };
+
 
   const handleResetStudentPassword = async (studentId: string): Promise<string> => {
     const res = await authApi.resetStudentPassword(studentId);

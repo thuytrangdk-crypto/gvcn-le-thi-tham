@@ -280,7 +280,8 @@ export const StudentListView: React.FC<StudentListViewProps> = ({
   };
 
   const handleConfirmCleanClass = async () => {
-    if (cleanConfirmText.trim().toUpperCase() !== 'LAM SACH LOP') {
+    const normalized = cleanConfirmText.trim().replace(/\s+/g, ' ').toUpperCase();
+    if (normalized !== 'LAM SACH LOP' && normalized !== 'LÀM SẠCH LỚP') {
       setCleanError('Vui lòng nhập chính xác cụm từ "LAM SACH LOP"');
       return;
     }
@@ -289,19 +290,19 @@ export const StudentListView: React.FC<StudentListViewProps> = ({
     setCleanError('');
     try {
       if (onCleanClass) {
-        await onCleanClass(cleanConfirmText);
+        await onCleanClass('LAM SACH LOP');
       } else {
-        await studentApi.cleanClass(cleanConfirmText);
+        await studentApi.cleanClass('LAM SACH LOP');
       }
       setShowCleanModal(false);
       setCleanConfirmText('');
-      window.location.reload();
     } catch (err: any) {
       setCleanError(err.message || 'Lỗi khi làm sạch dữ liệu lớp');
     } finally {
       setIsCleaning(false);
     }
   };
+
 
   // Helper for initial letter
   const getInitial = (name: string) => {
@@ -899,9 +900,18 @@ export const StudentListView: React.FC<StudentListViewProps> = ({
             )}
 
             <div className="space-y-2 text-xs">
-              <label className="block font-bold text-slate-700">
-                Nhập chính xác cụm từ <span className="text-rose-600 select-all font-mono">LAM SACH LOP</span> để xác nhận:
-              </label>
+              <div className="flex items-center justify-between">
+                <label className="block font-bold text-slate-700">
+                  Nhập chính xác cụm từ <span className="text-rose-600 select-all font-mono font-bold">LAM SACH LOP</span> để xác nhận:
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setCleanConfirmText('LAM SACH LOP')}
+                  className="text-[11px] text-[#C94C67] hover:underline font-semibold"
+                >
+                  Điền nhanh
+                </button>
+              </div>
               <input
                 type="text"
                 value={cleanConfirmText}
@@ -921,7 +931,10 @@ export const StudentListView: React.FC<StudentListViewProps> = ({
               </button>
               <button
                 type="button"
-                disabled={cleanConfirmText.trim().toUpperCase() !== 'LAM SACH LOP' || isCleaning}
+                disabled={(() => {
+                  const norm = cleanConfirmText.trim().replace(/\s+/g, ' ').toUpperCase();
+                  return (norm !== 'LAM SACH LOP' && norm !== 'LÀM SẠCH LỚP') || isCleaning;
+                })()}
                 onClick={handleConfirmCleanClass}
                 className="px-5 py-2 rounded-2xl bg-red-600 hover:bg-red-700 text-white text-xs font-extrabold transition-all shadow-md shadow-red-200 disabled:opacity-40"
               >
