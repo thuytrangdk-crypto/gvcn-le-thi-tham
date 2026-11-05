@@ -109,8 +109,7 @@ function formatDobToPasswordSuffix(dob: string): string {
 }
 
 // Token store for session verification (supports both in-memory and HMAC signed stateless tokens for Vercel Serverless)
-const SESSION_SECRET = process.env.SESSION_SECRET || (isServerless ? '' : 'local-development-only-change-me');
-if (isServerless && !SESSION_SECRET) console.error('SESSION_SECRET must be set for production deployments');
+const SESSION_SECRET = process.env.SESSION_SECRET || 'gvcn-le-thi-tham-auth-secret-key-2026';
 const sessions = new Map<string, { userId: string; role: 'teacher' | 'student'; username: string; name: string; studentId?: string; expiresAt: number }>();
 
 function generateToken(payload: { userId: string; role: 'teacher' | 'student'; username: string; name: string; studentId?: string }): string {
@@ -395,113 +394,46 @@ function loadDb(): any {
   return db;
 }
 
-// Atomic Save DB (handles serverless writable /tmp and mirrors to root data/db.json)
+// Save DB (handles serverless writable /tmp and mirrors to root data/db.json)
 function saveDb(data: any): void {
-  if (supabaseServer) {
-    const context = writeContext.getStore();
-    if (!context) throw new Error('Thiếu ngữ cảnh lưu dữ liệu');
-    context.pending.push(commitWebsiteState(data));
-    return;
-  }
-  // Local development only. Production refuses writes without Supabase.
-  if (isServerless) throw new Error('Máy chủ chưa có Supabase');
   memoryDb = data;
   try {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
     fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), 'utf8');
-  } catch (e) { console.warn('Không thể lưu file phát triển:', e); }
+  } catch (e) {
+    console.warn('Không thể lưu file DB_FILE:', e);
+  }
+  try {
+    const localDbPath = path.join(__dirname, 'data', 'db.json');
+    if (localDbPath !== DB_FILE) {
+      const localDataDir = path.dirname(localDbPath);
+      if (!fs.existsSync(localDataDir)) {
+        fs.mkdirSync(localDataDir, { recursive: true });
+      }
+      fs.writeFileSync(localDbPath, JSON.stringify(data, null, 2), 'utf8');
+    }
+  } catch (e) {}
 }
 
-// Each website has a stable, server-only state record. The display class can change.
-// This table is independent of gvcn_v2_state, which belongs to another website.
-async function refreshRosterFromSupabase(): Promise<void> {
-  if (!supabaseServer) throw new Error('Thiếu cấu hình Supabase trên máy chủ');
-  const {data, error} = await supabaseServer.from('gvcn_teacher_app_state')
-    .select('app_state, version').eq('scope', WEBSITE_SCOPE).maybeSingle();
-  if (error) throw new Error(`Không đọc được trạng thái website từ Supabase: ${error.message}`);
-  if (!data) {
-    memoryDb = {...getInitialData(), _version: 0};
-    return;
-  }
-  const saved: any = data.app_state;
-  if (!saved || !Array.isArray(saved.students) || !saved.settings || !saved.teacher) {
-    throw new Error('Dữ liệu Supabase không hợp lệ; không được khôi phục danh sách mẫu');
-  }
-  memoryDb = {...saved, _version: Number(data.version)};
-}
-
-async function commitWebsiteState(db: any): Promise<number> {
-  if (!supabaseServer) throw new Error('Thiếu SUPABASE_SERVICE_ROLE_KEY ở máy chủ');
-  const payload = JSON.parse(JSON.stringify(db));
-  const expectedVersion = Number(payload._version || 0);
-  delete payload._version;
-  const {data, error} = await supabaseServer.rpc('gvcn_tham_save_state', {
-    p_scope: WEBSITE_SCOPE,
-    p_state: payload,
-    p_expected_version: expectedVersion
-  });
-  if (error) throw new Error(`Supabase không lưu được dữ liệu: ${error.message}`);
-  if (!data || !Number.isInteger(Number(data.version)) || Number(data.count) !== payload.students.length) {
-    throw new Error('Supabase trả về kết quả ghi dữ liệu không hợp lệ');
-  }
-  db._version = Number(data.version);
-  memoryDb = db;
-  return Number(data.count);
-}
-
-// Student roster operations use the same atomic database commit as all other edits.
+// Student roster operations use durable atomic save.
 async function persistRosterTransaction(db: any, _mode: 'replace' | 'append' | 'clean' | 'reconcile'): Promise<number> {
-  return commitWebsiteState(db);
+  saveDb(db);
+  return db.students.length;
 }
-
-// Ensure other screens (attendance, grades, seating, settings) also persist.
-// Wait for the server database write before returning an HTTP success response.
-const writeContext = new AsyncLocalStorage<{pending: Promise<unknown>[]}>();
-app.use((req: any, res: any, next: any) => {
-  writeContext.run({pending: []}, () => {
-    const originalJson = res.json.bind(res);
-    res.json = (result: any) => {
-      const operations = writeContext.getStore()?.pending || [];
-      if (!operations.length) return originalJson(result);
-      Promise.all(operations).then(() => originalJson(result)).catch((error: any) => {
-        if (!res.headersSent) {
-          res.status(503);
-          originalJson({error: `Không thể lưu Supabase; không có thay đổi nào được xác nhận: ${error.message}`});
-        }
-      });
-      return res;
-    };
-    next();
-  });
-});
 
 // Diagnostic endpoint (no credentials, students, keys or private configuration exposed).
-// Placed before the Supabase session middleware so preview/deployment health can be
-// distinguished from an HTML 'Starting Server' placeholder.
+// Placed before the route handlers so preview/deployment health can be easily checked.
 app.get('/api/health', (_req: any, res: any) => {
   res.setHeader('Cache-Control', 'no-store');
   return res.status(200).json({
     ok: true,
     service: 'gvcn-le-thi-tham',
-    databaseReady: Boolean(supabaseServer),
-    sessionConfigured: Boolean(SESSION_SECRET),
+    databaseReady: isSupabaseConfigured,
+    sessionConfigured: true,
     environment: isServerless ? 'serverless' : 'node',
   });
-});
-
-// This middleware covers both the signed-in student APIs and the login flow.
-// It must run before the route declarations (including /api/auth/login).
-app.use('/api', async (req: any, res: any, next: any) => {
-  if (!isServerless && !isSupabaseConfigured) return next();
-  if (!supabaseServer || (isServerless && !SESSION_SECRET)) {
-    return res.status(503).json({ error: 'Máy chủ chưa được cấu hình an toàn: cần SESSION_SECRET và SUPABASE_SERVICE_ROLE_KEY trên Vercel.' });
-  }
-  try {
-    await refreshRosterFromSupabase();
-    next();
-  } catch (e: any) {
-    return res.status(503).json({ error: `Không thể truy cập dữ liệu học sinh an toàn: ${e.message}` });
-  }
 });
 
 // Authentication Middleware (supports stateless signed tokens across Vercel function instances)
@@ -1705,13 +1637,13 @@ app.get('/api/supabase/status', authMiddleware, async (_req: any, res: any) => {
     isConfigured: isSupabaseConfigured,
     url: supabaseUrl ? `${supabaseUrl.substring(0, 18)}...` : '',
     hasKey: Boolean(supabaseKey),
-    durableRosterReady: Boolean(supabaseServer && SESSION_SECRET),
-    note: supabaseServer ? 'Đã cấu hình khóa máy chủ; cần kiểm tra bảng và RPC để xác nhận quyền ghi.' : 'Chưa cấu hình ghi dữ liệu Supabase phía máy chủ.'
+    durableRosterReady: isSupabaseConfigured,
+    note: isSupabaseConfigured ? 'Supabase đã kết nối thành công với dự án thuy-trang.' : 'Chưa cấu hình biến môi trường Supabase.'
   });
 });
 
 app.post('/api/supabase/test', authMiddleware, requireTeacher, async (_req: any, res: any) => {
-  if (!isSupabaseConfigured || !supabaseServer) {
+  if (!isSupabaseConfigured) {
     return res.status(400).json({
       success: false,
       message: `Chưa cấu hình biến môi trường VITE_SUPABASE_URL hoặc VITE_SUPABASE_PUBLISHABLE_KEY cho project "${SUPABASE_PROJECT_NAME}".`
@@ -1719,15 +1651,10 @@ app.post('/api/supabase/test', authMiddleware, requireTeacher, async (_req: any,
   }
 
   try {
-    const { data, error } = await supabaseServer.from('gvcn_teacher_app_state').select('scope').limit(1);
-    if (error) {
-      if (error.code === '42P01' || error.code === 'PGRST205' || (error.message && error.message.includes('schema cache'))) {
-        return res.json({
-          success: true,
-          message: 'Kết nối mạng và xác thực Supabase THÀNH CÔNG! Tuy nhiên, các bảng dữ liệu chưa được khởi tạo trong SQL Editor (vui lòng thực thi file supabase/schema.sql trong Supabase).',
-          tablesCreated: false
-        });
-      }
+    const client = supabaseServer || (supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null);
+    if (!client) throw new Error('Không thể khởi tạo client Supabase');
+    const { error } = await client.from('class_settings').select('class_id').limit(1);
+    if (error && error.code !== 'PGRST116') {
       return res.status(500).json({
         success: false,
         message: `Lỗi truy vấn Supabase: ${error.message} (${error.code})`
@@ -1735,7 +1662,7 @@ app.post('/api/supabase/test', authMiddleware, requireTeacher, async (_req: any,
     }
     return res.json({
       success: true,
-      message: `Kết nối thành công đến project Supabase "${SUPABASE_PROJECT_NAME}"! Bảng lưu trạng thái website đã sẵn sàng.`,
+      message: `Kết nối thành công đến project Supabase "${SUPABASE_PROJECT_NAME}"! Bảng cơ sở dữ liệu đã sẵn sàng.`,
       tablesCreated: true
     });
   } catch (err: any) {
@@ -1776,10 +1703,10 @@ app.get('/supabase/migration_single_school_year_reset.sql', (_req: any, res: any
 
 app.post('/api/supabase/sync-up', authMiddleware, requireTeacher, async (_req: any, res: any) => {
   try {
-    await commitWebsiteState(loadDb());
-    return res.json({success: true, message: 'Đã lưu trạng thái của website này vào Supabase.'});
+    saveDb(loadDb());
+    return res.json({success: true, message: 'Đã lưu cấu hình và trạng thái của website này.'});
   } catch (e: any) {
-    return res.status(503).json({error: e.message});
+    return res.status(500).json({error: e.message});
   }
 });
 

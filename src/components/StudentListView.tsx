@@ -104,6 +104,8 @@ export const StudentListView: React.FC<StudentListViewProps> = ({
   const [showImportModal, setShowImportModal] = useState(false);
   const [importMode, setImportMode] = useState<'append' | 'replace'>('append'); // Mode B (default) or Mode A
   const [isImporting, setIsImporting] = useState(false);
+  const [showReplaceConfirmation, setShowReplaceConfirmation] = useState(false);
+  const [importSaveError, setImportSaveError] = useState('');
   const [importResult, setImportResult] = useState<{
     totalProcessed: number;
     successCount: number;
@@ -230,6 +232,8 @@ export const StudentListView: React.FC<StudentListViewProps> = ({
       setImportPreviewRows(rows);
       setImportErrors(errors);
       setImportResult(null);
+      setImportSaveError('');
+      setShowReplaceConfirmation(false);
       setImportMode('append'); // default to safe append
       setShowImportModal(true);
     } catch (err: any) {
@@ -239,22 +243,33 @@ export const StudentListView: React.FC<StudentListViewProps> = ({
     }
   };
 
-  const handleConfirmImport = async () => {
-    if (importPreviewRows.length === 0) return;
+  // Keep the confirmation INSIDE the app: native window.confirm may be blocked
+  // in embedded Google AI Studio Preview and appears as an unresponsive button.
+  const handleConfirmImport = () => {
+    if (isImporting || importPreviewRows.length === 0) return;
+    setImportSaveError('');
     if (importMode === 'replace') {
-      const ok = confirm(
-        'CẢNH BÁO: Chế độ "Thay thế toàn bộ danh sách lớp" sẽ xóa toàn bộ học sinh hiện có cùng điểm danh, điểm số và thi đua liên quan.\n\nBạn có chắc chắn muốn thực hiện?'
-      );
-      if (!ok) return;
+      setShowReplaceConfirmation(true);
+      return;
     }
+    void performImport();
+  };
 
+  const performImport = async () => {
+    if (isImporting || importPreviewRows.length === 0) return;
+    setShowReplaceConfirmation(false);
     setIsImporting(true);
+    setImportSaveError('');
     try {
       const res = await onImportStudents(importPreviewRows, importMode);
       setImportResult(res);
-      setImportPreviewRows([]);
+      if (res.successCount === 0 && res.errorCount > 0) {
+        setImportSaveError('Không nhập được học sinh nào. Kiểm tra các dòng lỗi bên dưới.');
+      } else {
+        setImportPreviewRows([]);
+      }
     } catch (err: any) {
-      alert(`Lỗi import: ${err.message}`);
+      setImportSaveError(err?.message || 'Không lưu được danh sách học sinh. Vui lòng kiểm tra kết nối máy chủ.');
     } finally {
       setIsImporting(false);
     }
@@ -760,6 +775,12 @@ export const StudentListView: React.FC<StudentListViewProps> = ({
               </div>
             )}
 
+            {importSaveError && (
+              <div role="alert" className="p-3 rounded-2xl border border-red-300 bg-red-50 text-sm font-semibold text-red-800">
+                Lỗi nhập danh sách: {importSaveError}
+              </div>
+            )}
+
             {/* Import result summary */}
             {importResult && (
               <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 space-y-2">
@@ -777,6 +798,32 @@ export const StudentListView: React.FC<StudentListViewProps> = ({
                     </ul>
                   </div>
                 )}
+              </div>
+            )}
+
+            {showReplaceConfirmation && (
+              <div role="alertdialog" aria-modal="true" aria-label="Xác nhận thay thế danh sách học sinh"
+                   className="rounded-2xl border-2 border-red-300 bg-red-50 p-4 space-y-3 shadow-lg">
+                <div className="flex items-center gap-2 font-extrabold text-red-800">
+                  <AlertTriangle className="w-5 h-5" /> XÁC NHẬN THAY THẾ DANH SÁCH
+                </div>
+                <p className="text-sm text-red-900">
+                  Danh sách hiện tại ({students.length} học sinh) cùng dữ liệu điểm danh, điểm số và thi đua của lớp
+                  sẽ được thay bằng {importPreviewRows.length} học sinh từ Excel. Hành động này không thể hoàn tác.
+                </p>
+                <p className="text-xs font-semibold text-red-800">
+                  Chỉ tiếp tục nếu đây là dữ liệu thử hoặc bạn đã sao lưu thông tin cần giữ.
+                </p>
+                <div className="flex flex-wrap justify-end gap-2">
+                  <button type="button" onClick={() => setShowReplaceConfirmation(false)} disabled={isImporting}
+                    className="px-4 py-2 border border-slate-300 rounded-xl bg-white text-slate-700 font-bold text-xs">
+                    Hủy, giữ danh sách cũ
+                  </button>
+                  <button type="button" onClick={() => void performImport()} disabled={isImporting}
+                    className="px-4 py-2 rounded-xl bg-red-600 text-white font-bold text-xs disabled:opacity-50">
+                    {isImporting ? 'Đang lưu...' : `Đồng ý thay bằng ${importPreviewRows.length} học sinh`}
+                  </button>
+                </div>
               </div>
             )}
 
